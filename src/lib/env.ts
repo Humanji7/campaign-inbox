@@ -1,11 +1,12 @@
-function mustGetEnv(name: string): string {
-  const value = import.meta.env[name] as string | undefined
-  if (!value) throw new Error(`Missing env var: ${name}`)
-  return value
+function getEnv(name: string): string | undefined {
+  return import.meta.env[name] as string | undefined
 }
 
 export const env = {
-  supabaseUrl: () => mustGetEnv('VITE_SUPABASE_URL'),
-  supabaseAnonKey: () => mustGetEnv('VITE_SUPABASE_ANON_KEY')
+  supabaseUrl: getEnv('VITE_SUPABASE_URL'),
+  supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY')
 }
 
+export function hasSupabaseEnv(): boolean {
+  return Boolean(env.supabaseUrl && env.supabaseAnonKey)
+}

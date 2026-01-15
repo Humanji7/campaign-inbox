@@ -11,6 +11,7 @@ type GithubSession = {
 }
 
 async function getGithubSession(): Promise<GithubSession | null> {
+  if (!supabase) return null
   const { data } = await supabase.auth.getSession()
   const token = data.session?.provider_token
   if (!token) return null
@@ -38,6 +39,7 @@ export default function PacksPage() {
   }, [repos, selectedRepos])
 
   const connectGithub = useCallback(async () => {
+    if (!supabase) return
     setBusy(true)
     try {
       await supabase.auth.signInWithOAuth({
@@ -52,6 +54,7 @@ export default function PacksPage() {
   }, [])
 
   const disconnect = useCallback(async () => {
+    if (!supabase) return
     setBusy(true)
     try {
       clearRepos()
@@ -107,6 +110,11 @@ export default function PacksPage() {
       </p>
 
       <div className="mt-6 rounded-2xl border border-zinc-800 p-4">
+        {!supabase ? (
+          <div className="rounded-2xl border border-zinc-800 p-4 text-sm text-zinc-300">
+            Missing Supabase env. Configure `.env` first to enable GitHub OAuth.
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-medium">GitHub</div>
@@ -119,7 +127,7 @@ export default function PacksPage() {
               className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-medium hover:bg-zinc-700"
               onClick={disconnect}
               type="button"
-              disabled={busy}
+              disabled={busy || !supabase}
             >
               Disconnect
             </button>
@@ -128,7 +136,7 @@ export default function PacksPage() {
               className="rounded-xl bg-white px-4 py-2 text-sm font-medium text-black hover:bg-zinc-200"
               onClick={connectGithub}
               type="button"
-              disabled={busy}
+              disabled={busy || !supabase}
             >
               Connect
             </button>

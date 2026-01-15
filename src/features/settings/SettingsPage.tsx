@@ -5,6 +5,7 @@ export default function SettingsPage() {
   const [email, setEmail] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!supabase) return
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null))
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
       setEmail(session?.user?.email ?? null)
@@ -13,12 +14,18 @@ export default function SettingsPage() {
   }, [])
 
   const signOut = useCallback(async () => {
+    if (!supabase) return
     await supabase.auth.signOut()
   }, [])
 
   return (
     <div>
       <h1 className="text-xl font-semibold">Settings</h1>
+      {!supabase ? (
+        <div className="mt-6 rounded-2xl border border-zinc-800 p-4 text-sm text-zinc-300">
+          Missing Supabase env. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+        </div>
+      ) : null}
       <div className="mt-6 rounded-2xl border border-zinc-800 p-4">
         <div className="text-sm text-zinc-400">Signed in</div>
         <div className="mt-1 text-sm">{email ?? '—'}</div>
@@ -26,6 +33,7 @@ export default function SettingsPage() {
           className="mt-4 rounded-xl bg-zinc-800 px-4 py-2 text-sm font-medium hover:bg-zinc-700"
           onClick={signOut}
           type="button"
+          disabled={!supabase}
         >
           Sign out
         </button>
@@ -33,4 +41,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-
