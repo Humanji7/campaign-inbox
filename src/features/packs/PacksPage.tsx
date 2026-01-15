@@ -3,6 +3,8 @@ import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
 import { listCommitsForRepo, listPublicRepos, type GithubCommit, type GithubRepo } from '../../lib/github'
 import { usePacksStore } from './store'
+import { generateCardsFromCommits } from './generate'
+import { useCardsStore } from '../cards/store'
 
 type GithubSession = {
   token: string
@@ -61,6 +63,7 @@ export default function PacksPage() {
 
   const [commitPreview, setCommitPreview] = useState<Record<string, GithubCommit[]> | null>(null)
   const [commitsError, setCommitsError] = useState<string | null>(null)
+  const addCards = useCardsStore(s => s.addCards)
 
   const fetchCommitsPreview = useCallback(async () => {
     setCommitsError(null)
@@ -86,6 +89,15 @@ export default function PacksPage() {
       setBusy(false)
     }
   }, [selectedRepoObjects])
+
+  const generateCards = useCallback(async () => {
+    if (!commitPreview) return
+    const cards = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
+      generateCardsFromCommits({ repoFullName, commits })
+    )
+    if (cards.length === 0) return
+    addCards(cards)
+  }, [addCards, commitPreview])
 
   return (
     <div>
@@ -183,7 +195,19 @@ export default function PacksPage() {
             </div>
 
             {commitsError ? <div className="mt-3 text-sm text-red-300">{commitsError}</div> : null}
-            {commitPreview ? <CommitPreview data={commitPreview} /> : null}
+            {commitPreview ? (
+              <div className="mt-3">
+                <CommitPreview data={commitPreview} />
+                <button
+                  className="mt-3 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black hover:bg-zinc-200"
+                  onClick={generateCards}
+                  type="button"
+                  disabled={busy}
+                >
+                  Generate cards → Inbox
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
