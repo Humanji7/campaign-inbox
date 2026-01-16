@@ -1,6 +1,8 @@
 -- Campaign Inbox MVP schema (v1)
 -- Date: 2026-01-16
 
+create extension if not exists pgcrypto;
+
 -- Taste profiles (versioned)
 create table if not exists public.taste_profiles (
   id uuid primary key default gen_random_uuid(),
@@ -100,4 +102,3 @@ create policy "action_cards_update_own" on public.action_cards
   for update using (auth.uid() = user_id);
 create policy "action_cards_delete_own" on public.action_cards
   for delete using (auth.uid() = user_id);
-
