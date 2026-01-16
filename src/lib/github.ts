@@ -40,9 +40,10 @@ export async function listCommitsForRepo(
   fullName: string,
   perPage: number
 ): Promise<GithubCommit[]> {
+  const [owner, repo] = fullName.split('/')
+  if (!owner || !repo) throw new Error(`Invalid repo full name: ${fullName}`)
   return githubFetch<GithubCommit[]>(
-    `/repos/${encodeURIComponent(fullName)}/commits?per_page=${perPage}`,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?per_page=${perPage}`,
     token
   )
 }
-

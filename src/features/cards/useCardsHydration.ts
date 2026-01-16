@@ -11,7 +11,7 @@ export default function useCardsHydration() {
 
   useEffect(() => {
     if (!data?.length) return
-    addCards(data)
+    // addCards() unshifts new ids; reverse to preserve descending ordering from DB.
+    addCards([...data].reverse())
   }, [addCards, data])
 }
-
