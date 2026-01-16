@@ -74,6 +74,7 @@ export default function PacksPage() {
 
   const [commitPreview, setCommitPreview] = useState<Record<string, GithubCommit[]> | null>(null)
   const [commitsError, setCommitsError] = useState<string | null>(null)
+  const [generateNotice, setGenerateNotice] = useState<string | null>(null)
   const addCards = useCardsStore(s => s.addCards)
 
   const fetchCommitsPreview = useCallback(async () => {
@@ -103,12 +104,21 @@ export default function PacksPage() {
 
   const generateCards = useCallback(async () => {
     if (!commitPreview) return
+    setGenerateNotice(null)
     const localCards = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
       generateCardsFromCommits({ repoFullName, commits })
     )
-    if (localCards.length === 0) return
+    if (localCards.length === 0) {
+      setGenerateNotice('No cards generated. Try a repo with recent commits.')
+      return
+    }
 
     addCards(localCards)
+    const readyCount = localCards.filter(c => c.status === 'ready').length
+    const needsInfoCount = localCards.filter(c => c.status === 'needs_info').length
+    setGenerateNotice(
+      `Generated ${localCards.length} card(s). Ready: ${readyCount}, NeedsInfo: ${needsInfoCount}.`
+    )
 
     const userId = await getSupabaseUserId()
     if (!supabase || !userId) return
@@ -232,6 +242,11 @@ export default function PacksPage() {
                 >
                   Generate cards → Inbox
                 </button>
+                {generateNotice ? (
+                  <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+                    {generateNotice}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

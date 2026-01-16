@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDrag } from '@use-gesture/react'
 import type { ActionCard } from '../../types/domain'
 import { useCardsStore } from '../cards/store'
@@ -15,6 +16,23 @@ export default function InboxPage() {
   const setStatus = useCardsStore(s => s.setStatus)
 
   const [shipCardId, setShipCardId] = useState<string | null>(null)
+
+  const counts = useMemo(() => {
+    let ready = 0
+    let needsInfo = 0
+    for (const id of orderedIds) {
+      const card = cardsById[id]
+      if (!card) continue
+      if (card.status === 'ready') ready += 1
+      if (card.status === 'needs_info') needsInfo += 1
+    }
+    return { ready, needsInfo }
+  }, [cardsById, orderedIds])
+
+  useEffect(() => {
+    if (tab !== 'ready') return
+    if (counts.ready === 0 && counts.needsInfo > 0) setTab('needs_info')
+  }, [counts.needsInfo, counts.ready, tab])
 
   const cards = useMemo(() => {
     const list: ActionCard[] = []
@@ -34,10 +52,10 @@ export default function InboxPage() {
 
       <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-zinc-800 p-1">
         <InboxTabButton active={tab === 'ready'} onClick={() => setTab('ready')}>
-          Ready
+          Ready {counts.ready ? `(${counts.ready})` : ''}
         </InboxTabButton>
         <InboxTabButton active={tab === 'needs_info'} onClick={() => setTab('needs_info')}>
-          NeedsInfo
+          NeedsInfo {counts.needsInfo ? `(${counts.needsInfo})` : ''}
         </InboxTabButton>
       </div>
 
@@ -79,7 +97,7 @@ function InboxTabButton({
 }: {
   active: boolean
   onClick: () => void
-  children: string
+  children: ReactNode
 }) {
   return (
     <button
