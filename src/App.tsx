@@ -3,11 +3,13 @@ import InboxPage from './features/inbox/InboxPage'
 import HistoryPage from './features/history/HistoryPage'
 import PacksPage from './features/packs/PacksPage'
 import SettingsPage from './features/settings/SettingsPage'
+import useCardsHydration from './features/cards/useCardsHydration'
 
 type TabKey = 'inbox' | 'history' | 'packs' | 'settings'
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>('packs')
+  useCardsHydration()
 
   const content = useMemo(() => {
     switch (tab) {
@@ -75,4 +77,3 @@ function TabButton({
     </button>
   )
 }
-

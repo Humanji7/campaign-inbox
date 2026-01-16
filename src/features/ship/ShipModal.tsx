@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useCardsStore } from '../cards/store'
+import { supabase } from '../../lib/supabase'
+import { markPosted } from '../cards/supabaseCards'
 
 export default function ShipModal({ cardId, onClose }: { cardId: string | null; onClose: () => void }) {
   const card = useCardsStore(s => (cardId ? s.cardsById[cardId] : undefined))
@@ -54,6 +56,9 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
 
       const postedAt = new Date().toISOString()
       postCard(card.id, parsed.toString(), postedAt)
+      if (supabase) {
+        markPosted(supabase, card.id, parsed.toString(), postedAt).catch(() => {})
+      }
       resetAndClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invalid URL')

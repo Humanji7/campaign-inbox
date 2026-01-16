@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useDrag } from '@use-gesture/react'
 import type { ActionCard } from '../../types/domain'
 import { useCardsStore } from '../cards/store'
+import { supabase } from '../../lib/supabase'
+import { updateCardStatus } from '../cards/supabaseCards'
 import ShipModal from '../ship/ShipModal'
 
 type InboxTab = 'ready' | 'needs_info'
@@ -50,7 +52,15 @@ export default function InboxPage() {
             <SwipeCardRow
               key={card.id}
               card={card}
-              onKill={() => setStatus(card.id, 'killed')}
+              onKill={async () => {
+                setStatus(card.id, 'killed')
+                if (!supabase) return
+                try {
+                  await updateCardStatus(supabase, card.id, 'killed')
+                } catch {
+                  // keep optimistic status
+                }
+              }}
               onShip={() => setShipCardId(card.id)}
             />
           ))}

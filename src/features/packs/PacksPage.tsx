@@ -5,6 +5,7 @@ import { listCommitsForRepo, listPublicRepos, type GithubCommit, type GithubRepo
 import { usePacksStore } from './store'
 import { generateCardsFromCommits } from './generate'
 import { useCardsStore } from '../cards/store'
+import { insertCards } from '../cards/supabaseCards'
 
 type GithubSession = {
   token: string
@@ -16,6 +17,13 @@ async function getGithubSession(): Promise<GithubSession | null> {
   const token = data.session?.provider_token
   if (!token) return null
   return { token }
+}
+
+async function getSupabaseUserId(): Promise<string | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.auth.getUser()
+  if (error) return null
+  return data.user?.id ?? null
 }
 
 export default function PacksPage() {
@@ -95,11 +103,21 @@ export default function PacksPage() {
 
   const generateCards = useCallback(async () => {
     if (!commitPreview) return
-    const cards = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
+    const localCards = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
       generateCardsFromCommits({ repoFullName, commits })
     )
-    if (cards.length === 0) return
-    addCards(cards)
+    if (localCards.length === 0) return
+
+    addCards(localCards)
+
+    const userId = await getSupabaseUserId()
+    if (!supabase || !userId) return
+    try {
+      const saved = await insertCards(supabase, userId, localCards)
+      addCards(saved)
+    } catch {
+      // Keep optimistic local cards; user can still use app.
+    }
   }, [addCards, commitPreview])
 
   return (

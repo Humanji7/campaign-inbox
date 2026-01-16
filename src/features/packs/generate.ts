@@ -1,6 +1,6 @@
 import type { ActionCard, CardFact, RiskChip } from '../../types/domain'
 import type { GithubCommit } from '../../lib/github'
-import { makeId } from '../../lib/id'
+import { makeId, makeUuid } from '../../lib/id'
 
 function normalizeSubject(message: string): string {
   return message.split('\n')[0].trim()
@@ -72,7 +72,7 @@ export function generateCardsFromCommits(input: {
 
   return [
     {
-      id: makeId('card'),
+      id: makeUuid(),
       status,
       content,
       version: 1,
@@ -83,4 +83,3 @@ export function generateCardsFromCommits(input: {
     }
   ]
 }
-
