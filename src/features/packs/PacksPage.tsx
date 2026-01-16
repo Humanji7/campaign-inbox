@@ -3,7 +3,7 @@ import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
 import { listCommitsForRepo, listPublicRepos, type GithubCommit, type GithubRepo } from '../../lib/github'
 import { usePacksStore } from './store'
-import { generateCardsFromCommits } from './generate'
+import type { ActionCard } from '../../types/domain'
 import { useCardsStore } from '../cards/store'
 import { insertCards } from '../cards/supabaseCards'
 
@@ -105,28 +105,52 @@ export default function PacksPage() {
   const generateCards = useCallback(async () => {
     if (!commitPreview) return
     setGenerateNotice(null)
-    const localCards = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
-      generateCardsFromCommits({ repoFullName, commits })
-    )
-    if (localCards.length === 0) {
-      setGenerateNotice('No cards generated. Try a repo with recent commits.')
+    if (!supabase) {
+      setGenerateNotice('Supabase not configured; cannot generate via Edge Function.')
       return
     }
 
-    addCards(localCards)
-    const readyCount = localCards.filter(c => c.status === 'ready').length
-    const needsInfoCount = localCards.filter(c => c.status === 'needs_info').length
-    setGenerateNotice(
-      `Generated ${localCards.length} card(s). Ready: ${readyCount}, NeedsInfo: ${needsInfoCount}.`
-    )
-
-    const userId = await getSupabaseUserId()
-    if (!supabase || !userId) return
+    setBusy(true)
     try {
-      const saved = await insertCards(supabase, userId, localCards)
+      const commits = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
+        commits.map(c => ({
+          repoFullName,
+          sha: c.sha,
+          url: c.html_url,
+          messageSubject: c.commit.message.split('\n')[0].trim(),
+          authoredAt: c.commit.author?.date ?? new Date().toISOString()
+        }))
+      )
+
+      const { data, error } = await supabase.functions.invoke('generate-cards', {
+        body: { commits, maxCards: 3 }
+      })
+      if (error) throw error
+
+      const payload = data as { cards?: ActionCard[]; mode?: string }
+      const cards = payload.cards ?? []
+      if (cards.length === 0) {
+        setGenerateNotice('No cards generated. Try a repo with recent commits.')
+        return
+      }
+
+      addCards(cards)
+      const readyCount = cards.filter(c => c.status === 'ready').length
+      const needsInfoCount = cards.filter(c => c.status === 'needs_info').length
+      setGenerateNotice(
+        `Generated ${cards.length} card(s). Ready: ${readyCount}, NeedsInfo: ${needsInfoCount}. Mode: ${
+          payload.mode ?? 'unknown'
+        }.`
+      )
+
+      const userId = await getSupabaseUserId()
+      if (!userId) return
+      const saved = await insertCards(supabase, userId, cards)
       addCards(saved)
-    } catch {
-      // Keep optimistic local cards; user can still use app.
+    } catch (e) {
+      setGenerateNotice(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
     }
   }, [addCards, commitPreview])
 
