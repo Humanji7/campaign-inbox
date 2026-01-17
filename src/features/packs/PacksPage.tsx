@@ -6,6 +6,7 @@ import { usePacksStore } from './store'
 import type { ActionCard } from '../../types/domain'
 import { useCardsStore } from '../cards/store'
 import { insertCards } from '../cards/supabaseCards'
+import { useTasteProfile } from '../taste/useTasteProfile'
 
 type GithubSession = {
   token: string
@@ -76,6 +77,7 @@ export default function PacksPage() {
   const [commitsError, setCommitsError] = useState<string | null>(null)
   const [generateNotice, setGenerateNotice] = useState<string | null>(null)
   const addCards = useCardsStore(s => s.addCards)
+  const { taste } = useTasteProfile()
 
   const fetchCommitsPreview = useCallback(async () => {
     setCommitsError(null)
@@ -105,13 +107,20 @@ export default function PacksPage() {
   const generateCards = useCallback(async () => {
     if (!commitPreview) return
     setGenerateNotice(null)
-    if (!supabase) {
+    const sb = supabase
+    if (!sb) {
       setGenerateNotice('Supabase not configured; cannot generate via Edge Function.')
       return
     }
 
     setBusy(true)
     try {
+      const sessionInfo = await sb.auth.getSession()
+      const jwt = sessionInfo.data.session?.access_token
+      if (!jwt) {
+        throw new Error('Signed out (no session). Reconnect to GitHub and try again.')
+      }
+
       const commits = Object.entries(commitPreview).flatMap(([repoFullName, commits]) =>
         commits.map(c => ({
           repoFullName,
@@ -122,12 +131,34 @@ export default function PacksPage() {
         }))
       )
 
-      const { data, error } = await supabase.functions.invoke('generate-cards', {
-        body: { commits, maxCards: 3 }
-      })
+      const tastePayload = taste
+        ? {
+            rawNotes: taste.rawNotes ?? null,
+            ctaIntensity: taste.data.ctaIntensity ?? null,
+            toneAdjectives: taste.data.toneAdjectives ?? null,
+            length: taste.data.length ?? null
+          }
+        : undefined
+
+      const invokeOnce = async (accessToken: string) => {
+        return await sb.functions.invoke('generate-cards', {
+          body: { commits, maxCards: 3, taste: tastePayload },
+          headers: { Authorization: `Bearer ${accessToken}` }
+        })
+      }
+
+      let { data, error } = await invokeOnce(jwt)
+      const status = (error as any)?.context?.status
+      if (error && status === 401) {
+        // Session might be expired; try refresh once, then retry.
+        const refreshed = await sb.auth.refreshSession()
+        const jwt2 = refreshed.data.session?.access_token
+        if (!jwt2) throw error
+        ;({ data, error } = await invokeOnce(jwt2))
+      }
       if (error) throw error
 
-      const payload = data as { cards?: ActionCard[]; mode?: string }
+      const payload = data as { cards?: ActionCard[]; mode?: string; llmError?: string; llmDebug?: unknown }
       const cards = payload.cards ?? []
       if (cards.length === 0) {
         setGenerateNotice('No cards generated. Try a repo with recent commits.')
@@ -137,22 +168,49 @@ export default function PacksPage() {
       addCards(cards)
       const readyCount = cards.filter(c => c.status === 'ready').length
       const needsInfoCount = cards.filter(c => c.status === 'needs_info').length
+      const llmErr = payload.mode === 'fallback_llm_error' ? payload.llmError : null
+      const llmDbg = payload.mode === 'fallback_llm_error' ? payload.llmDebug : null
       setGenerateNotice(
         `Generated ${cards.length} card(s). Ready: ${readyCount}, NeedsInfo: ${needsInfoCount}. Mode: ${
           payload.mode ?? 'unknown'
-        }.`
+        }.${llmErr ? `\n\nLLM error:\n${llmErr}` : ''}${llmDbg ? `\n\nLLM debug:\n${JSON.stringify(llmDbg)}` : ''}`
       )
 
       const userId = await getSupabaseUserId()
       if (!userId) return
-      const saved = await insertCards(supabase, userId, cards)
+      const saved = await insertCards(sb, userId, cards)
       addCards(saved)
     } catch (e) {
-      setGenerateNotice(e instanceof Error ? e.message : String(e))
+      const base = e instanceof Error ? e.message : String(e)
+      const ctx = (e as any)?.context
+      const status = typeof ctx?.status === 'number' ? ctx.status : null
+      const body = ctx?.body
+      const isEmptyBody =
+        body == null
+          ? true
+          : typeof body === 'string'
+            ? body.trim() === '' || body.trim() === '{}'
+            : typeof body === 'object'
+              ? Object.keys(body).length === 0
+              : false
+      const detail =
+        status || body
+          ? `\n\nDetails:\n${status ? `status=${status}\n` : ''}${body ? `body=${typeof body === 'string' ? body : JSON.stringify(body)}` : ''}`
+          : ''
+
+      const hint =
+        status === 401
+          ? `\n\nHint: your session is missing/expired. Click Disconnect → Connect again, then retry.${
+              isEmptyBody
+                ? '\nIf you still get status=401 with body={}, open Supabase Dashboard → Edge Functions → generate-cards → Details and turn OFF “Verify JWT with legacy secret”.'
+                : ''
+            }`
+          : ''
+      setGenerateNotice(`${base}${detail}${hint}`)
     } finally {
       setBusy(false)
     }
-  }, [addCards, commitPreview])
+  }, [addCards, commitPreview, taste])
 
   return (
     <div>

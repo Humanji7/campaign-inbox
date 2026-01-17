@@ -14,3 +14,6 @@
 - Stack decision pass v1: `docs/specs/2026-01-15-stack-decision-pass-v1.md`
 - Supabase schema & RLS v1: `docs/specs/2026-01-15-supabase-schema-rls-v1.md`
 - Frontend MVP performance checklist: `docs/specs/2026-01-15-frontend-mvp-performance-checklist.md`
+
+## Runbooks (how to operate)
+- Supabase Edge + LLM: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`

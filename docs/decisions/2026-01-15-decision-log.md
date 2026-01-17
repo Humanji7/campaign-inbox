@@ -103,3 +103,37 @@
 Причина: MVP быстрее; делаем интерфейс “LLM client” и настройки через env, чтобы потом безболезненно разделить слои.  
 Компромиссы/риски: возможно переплата на старте; решаем лимитами и кэшем.  
 Что проверяем завтра (design-pass): какие лимиты/батчи дают приемлемый результат по карточкам.
+
+## 9) Модели (cheap/fast): default на “мини”, upgrade по кнопке
+Дата: 2026-01-16  
+Тема: LLM model strategy for tweet-sized drafts  
+Контекст: большинство задач — короткие тексты; нужно дешево/быстро по умолчанию, но оставить путь к более высокому качеству.  
+Варианты (A/B/C):  
+- A: всегда “дорогая” модель (качество, но дорого)  
+- B: always cheap model (дешево, но потолок качества)  
+- C: cheap default + optional “polish” upgrade  
+Выбор: C  
+Причина: совпадает с реальностью рынка (часто базовая генерация на дешёвом классе, а премиум — на сильной модели) и с нашей “нет денег на API сейчас” стратегией.  
+Компромиссы/риски: усложнение UX (режимы/кнопка), нужен контроль токенов и кэш по inputs digest.  
+Док: `docs/decisions/2026-01-16-llm-model-strategy.md`.
+
+## 10) Supabase Edge auth и “legacy JWT verify” (обязательное правило)
+Дата: 2026-01-17  
+Тема: Edge Function JWT verification strategy  
+Контекст: Supabase может отклонять современные ES256 JWT “до кода” если включить “Verify JWT with legacy secret” → `401 body={}`.  
+Варианты (A/B/C):
+- A: включить legacy verify в Dashboard
+- B: выключить legacy verify и проверять сессию внутри функции (`/auth/v1/user`)
+- C: сделать функцию публичной без auth
+Выбор: B  
+Причина: не ломает современные JWT и даёт понятные JSON ошибки; auth остаётся строгим.  
+Операционное правило: деплоить `generate-cards` только с `--no-verify-jwt` (см. `npm run deploy:generate-cards`).  
+Док: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`.
+
+## 11) GPT‑5: JSON mode + reasoning_effort, иначе “пустой контент”
+Дата: 2026-01-17  
+Тема: GPT‑5 chat completion output reliability  
+Контекст: `finish_reason=length` и пустой `message.content` наблюдалось в facts stage при GPT‑5.  
+Решение: для OpenAI включаем `response_format: {type:"json_object"}`, используем роль `developer` и `reasoning_effort=minimal`, плюс не отправляем `temperature` для `gpt-5*` (кроме `gpt-5.2*`).  
+Причина: заставляет модель возвращать валидный JSON вместо “молчаливого” рассуждения.  
+Док: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`.

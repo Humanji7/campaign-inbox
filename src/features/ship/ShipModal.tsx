@@ -2,21 +2,26 @@ import { useCallback, useMemo, useState } from 'react'
 import { useCardsStore } from '../cards/store'
 import { supabase } from '../../lib/supabase'
 import { markPosted } from '../cards/supabaseCards'
+import { useTasteProfile } from '../taste/useTasteProfile'
+import { applyLengthRefinement, type LengthRefinement } from './refinement'
 
 export default function ShipModal({ cardId, onClose }: { cardId: string | null; onClose: () => void }) {
   const card = useCardsStore(s => (cardId ? s.cardsById[cardId] : undefined))
   const postCard = useCardsStore(s => s.postCard)
+  const { taste, save: saveTaste } = useTasteProfile()
 
-  const [step, setStep] = useState<'copy' | 'open' | 'url'>('copy')
+  const [step, setStep] = useState<'copy' | 'open' | 'url' | 'refine'>('copy')
   const [copied, setCopied] = useState(false)
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [refineBusy, setRefineBusy] = useState(false)
 
   const resetAndClose = useCallback(() => {
     setStep('copy')
     setCopied(false)
     setUrl('')
     setError(null)
+    setRefineBusy(false)
     onClose()
   }, [onClose])
 
@@ -59,11 +64,38 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
       if (supabase) {
         markPosted(supabase, card.id, parsed.toString(), postedAt).catch(() => {})
       }
-      resetAndClose()
+      setStep('refine')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invalid URL')
     }
   }, [card, postCard, resetAndClose, url])
+
+  const refine = useCallback(
+    async (choice: LengthRefinement) => {
+      setError(null)
+      if (!supabase) {
+        resetAndClose()
+        return
+      }
+
+      setRefineBusy(true)
+      try {
+        const nextLength = applyLengthRefinement(taste?.data.length ?? null, choice)
+        await saveTaste({
+          rawNotes: taste?.rawNotes ?? null,
+          data: {
+            ...(taste?.data ?? {}),
+            length: nextLength
+          }
+        })
+        resetAndClose()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        setRefineBusy(false)
+      }
+    },
+    [resetAndClose, saveTaste, taste]
+  )
 
   if (!cardId || !card) return null
 
@@ -130,6 +162,49 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
                 type="button"
               >
                 Mark as posted
+              </button>
+            </div>
+          ) : null}
+
+          {step === 'refine' ? (
+            <div className="mt-2">
+              <div className="text-sm font-semibold text-zinc-100">One quick question</div>
+              <div className="mt-1 text-xs text-zinc-400">Next time, should posts be shorter or longer?</div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <button
+                  className="rounded-2xl border border-zinc-700 px-3 py-3 text-sm font-semibold text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
+                  onClick={() => refine('shorter')}
+                  type="button"
+                  disabled={refineBusy}
+                >
+                  Shorter
+                </button>
+                <button
+                  className="rounded-2xl border border-zinc-700 px-3 py-3 text-sm font-semibold text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
+                  onClick={() => refine('same')}
+                  type="button"
+                  disabled={refineBusy}
+                >
+                  Same
+                </button>
+                <button
+                  className="rounded-2xl border border-zinc-700 px-3 py-3 text-sm font-semibold text-zinc-200 hover:bg-zinc-900 disabled:opacity-60"
+                  onClick={() => refine('longer')}
+                  type="button"
+                  disabled={refineBusy}
+                >
+                  Longer
+                </button>
+              </div>
+
+              <button
+                className="mt-3 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black hover:bg-zinc-200 disabled:opacity-60"
+                onClick={resetAndClose}
+                type="button"
+                disabled={refineBusy}
+              >
+                Skip
               </button>
             </div>
           ) : null}

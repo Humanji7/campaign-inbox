@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ActionCard, CardFact, CardStatus, RiskChip } from '../../types/domain'
+import type { ActionCard, CardBrief, CardFact, CardStatus, RiskChip } from '../../types/domain'
+import { normalizeCardBriefForDb, parseCardBrief } from './brief'
 
 type DbCardRow = {
   id: string
@@ -7,6 +8,7 @@ type DbCardRow = {
   status: string
   content: string
   version: number
+  brief: unknown
   facts: unknown
   risk_chips: unknown
   posted_url: string | null
@@ -21,10 +23,12 @@ function isCardStatus(value: string): value is CardStatus {
 
 function toActionCard(row: DbCardRow): ActionCard {
   const status = isCardStatus(row.status) ? row.status : 'needs_info'
+  const brief = parseCardBrief(row.brief) ?? undefined
   return {
     id: row.id,
     status,
     content: row.content,
+    brief,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -39,7 +43,7 @@ export async function listCards(supabase: SupabaseClient): Promise<ActionCard[]>
   const { data, error } = await supabase
     .from('action_cards')
     .select(
-      'id,user_id,status,content,version,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
+      'id,user_id,status,content,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
     )
     .order('created_at', { ascending: false })
 
@@ -58,6 +62,7 @@ export async function insertCards(
     status: card.status,
     content: card.content,
     version: card.version,
+    brief: normalizeCardBriefForDb(card.brief),
     facts: card.facts,
     risk_chips: card.riskChips,
     posted_url: card.postedUrl ?? null,
@@ -68,11 +73,32 @@ export async function insertCards(
     .from('action_cards')
     .insert(rows)
     .select(
-      'id,user_id,status,content,version,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
+      'id,user_id,status,content,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
     )
 
   if (error) throw error
   return (data as DbCardRow[]).map(toActionCard)
+}
+
+export async function updateCardDraft(
+  supabase: SupabaseClient,
+  cardId: string,
+  draft: { content: string; brief?: CardBrief; version: number; status?: CardStatus }
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    content: draft.content,
+    brief: normalizeCardBriefForDb(draft.brief),
+    version: draft.version,
+    updated_at: new Date().toISOString()
+  }
+  if (draft.status) update.status = draft.status
+
+  const { error } = await supabase
+    .from('action_cards')
+    .update(update)
+    .eq('id', cardId)
+
+  if (error) throw error
 }
 
 export async function updateCardStatus(
@@ -106,4 +132,3 @@ export async function markPosted(
 
   if (error) throw error
 }
-

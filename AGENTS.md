@@ -2247,3 +2247,21 @@ function SearchInput({ onSearch }: { onSearch: (q: string) => void }) {
 5. [https://github.com/isaacs/node-lru-cache](https://github.com/isaacs/node-lru-cache)
 6. [https://vercel.com/blog/how-we-optimized-package-imports-in-next-js](https://vercel.com/blog/how-we-optimized-package-imports-in-next-js)
 7. [https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast](https://vercel.com/blog/how-we-made-the-vercel-dashboard-twice-as-fast)
+# Campaign Inbox — Agent Notes (Project-specific)
+
+These notes override defaults when working in this repo.
+
+## Supabase Edge Functions
+- Deploy `generate-cards` with `--no-verify-jwt` (or run `npm run deploy:generate-cards`). Otherwise Supabase may re-enable JWT verification and you’ll see `401 body={}`.
+- Do **not** enable “Verify JWT with legacy secret” for `generate-cards` (it can reject modern ES256 JWTs before your code runs).
+
+## LLM (GPT‑5 specifics)
+- For `gpt-5*`: use role `developer`, enforce JSON via `response_format: { type: "json_object" }` (OpenAI only), set `reasoning_effort=minimal`.
+- Do not send `temperature` for `gpt-5*` (except `gpt-5.2*`).
+
+## Ops
+- Quick health check: `npm run doctor`
+- Runbook: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`
+
+## Security
+- Never paste OAuth tokens / access tokens / refresh tokens in chat logs; rotate if leaked.

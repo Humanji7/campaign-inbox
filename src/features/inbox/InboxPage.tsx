@@ -6,6 +6,8 @@ import { useCardsStore } from '../cards/store'
 import { supabase } from '../../lib/supabase'
 import { updateCardStatus } from '../cards/supabaseCards'
 import ShipModal from '../ship/ShipModal'
+import QuickEditSheet from '../edit/QuickEditSheet'
+import FixActionsSheet, { type EditContext } from '../fix/FixActionsSheet'
 
 type InboxTab = 'ready' | 'needs_info'
 
@@ -16,6 +18,9 @@ export default function InboxPage() {
   const setStatus = useCardsStore(s => s.setStatus)
 
   const [shipCardId, setShipCardId] = useState<string | null>(null)
+  const [editCardId, setEditCardId] = useState<string | null>(null)
+  const [editContext, setEditContext] = useState<EditContext | null>(null)
+  const [fixCardId, setFixCardId] = useState<string | null>(null)
 
   const counts = useMemo(() => {
     let ready = 0
@@ -80,12 +85,30 @@ export default function InboxPage() {
                 }
               }}
               onShip={() => setShipCardId(card.id)}
+              onEdit={() => setEditCardId(card.id)}
+              onFix={() => setFixCardId(card.id)}
             />
           ))}
         </div>
       )}
 
       <ShipModal cardId={shipCardId} onClose={() => setShipCardId(null)} />
+      <QuickEditSheet
+        cardId={editCardId}
+        onClose={() => {
+          setEditCardId(null)
+          setEditContext(null)
+        }}
+        context={editContext ?? undefined}
+      />
+      <FixActionsSheet
+        card={fixCardId ? cardsById[fixCardId] ?? null : null}
+        onClose={() => setFixCardId(null)}
+        onOpenEdit={ctx => {
+          setEditContext(ctx)
+          setEditCardId(fixCardId)
+        }}
+      />
     </div>
   )
 }
@@ -116,11 +139,15 @@ function InboxTabButton({
 function SwipeCardRow({
   card,
   onKill,
-  onShip
+  onShip,
+  onEdit,
+  onFix
 }: {
   card: ActionCard
   onKill: () => void
   onShip: () => void
+  onEdit: () => void
+  onFix: () => void
 }) {
   const [x, setX] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -167,7 +194,35 @@ function SwipeCardRow({
         ].join(' ')}
         style={{ transform: `translateX(${x}px)` }}
       >
-        <div className="text-sm font-semibold">{card.content.split('\n')[0]}</div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="text-sm font-semibold">{card.content.split('\n')[0]}</div>
+          <div className="flex shrink-0 items-center gap-2">
+            {card.riskChips.length ? (
+              <button
+                className="rounded-xl bg-amber-400 px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-300"
+                onClick={e => {
+                  e.stopPropagation()
+                  onFix()
+                }}
+                onPointerDown={e => e.stopPropagation()}
+                type="button"
+              >
+                Fix {card.riskChips.length}
+              </button>
+            ) : null}
+            <button
+              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-900"
+              onClick={e => {
+                e.stopPropagation()
+                onEdit()
+              }}
+              onPointerDown={e => e.stopPropagation()}
+              type="button"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
         <div className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-zinc-400">{card.content}</div>
         {card.riskChips.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">

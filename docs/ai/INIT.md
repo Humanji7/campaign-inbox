@@ -37,6 +37,21 @@
 Для MVP используем короткий чек-лист (subset), чтобы не перегружать процесс:
 - `docs/specs/2026-01-15-frontend-mvp-performance-checklist.md`
 
+## 9) Ops память (чтобы не забывать грабли)
+
+### 9.1 Supabase Edge + JWT verify
+Если Edge Function отвечает `401 body={}`, почти всегда причина в включённом тумблере **“Verify JWT with legacy secret”** (Supabase отклоняет ES256 JWT до выполнения кода).  
+Правило: деплоим `generate-cards` только с `--no-verify-jwt` (см. `npm run deploy:generate-cards`).
+
+### 9.2 GPT‑5 “молчал” (finish_reason=length, content пустой)
+Фикс на уровне LLM клиента:
+- для `gpt-5*` используем роль `developer`
+- включаем `response_format: { type: "json_object" }` (только OpenAI)
+- `reasoning_effort=minimal`
+- не отправляем `temperature` для `gpt-5*` (кроме `gpt-5.2*`)
+
+Runbook: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`
+
 ## 4) Эскалация (когда я обязан остановиться и спросить тебя “ок?”)
 Я обязан эскалировать перед тем, как продолжать, если изменения затрагивают:
 - навигацию/IA (tabs, назначение экранов),
