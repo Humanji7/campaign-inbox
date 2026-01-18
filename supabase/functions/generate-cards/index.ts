@@ -69,6 +69,7 @@ type RequestBody = {
     ctaIntensity?: 'off' | 'soft' | 'normal' | 'strong' | null
     toneAdjectives?: string[] | null
     length?: 'short' | 'medium' | 'long' | null
+    warmth?: 'neutral' | 'warm' | null
   }
 }
 
@@ -77,6 +78,7 @@ type TasteSummary = {
   ctaIntensity: 'off' | 'soft' | 'normal' | 'strong'
   toneAdjectives: string[]
   length: 'short' | 'medium' | 'long'
+  warmth: 'neutral' | 'warm'
 }
 
 function makeUuid(): string {
@@ -99,7 +101,8 @@ function normalizeTaste(taste: RequestBody['taste'] | undefined): TasteSummary {
     rawNotes: taste?.rawNotes ?? null,
     ctaIntensity: taste?.ctaIntensity ?? 'soft',
     toneAdjectives: taste?.toneAdjectives ?? ['clear', 'builder', 'honest'],
-    length: taste?.length ?? 'medium'
+    length: taste?.length ?? 'medium',
+    warmth: taste?.warmth ?? 'warm'
   }
 }
 
@@ -315,7 +318,11 @@ Deno.serve(async req => {
             'You write X/Twitter post drafts as cards.',
             'Output ONLY valid JSON (no markdown, no code fences).',
             'Voice: concise, concrete, human. Avoid generic “corporate AI” vibes.',
+            'Warmth: if taste.warmth="warm", write slightly warmer/more human (first-person ok, mild emotion like curiosity/relief ok, but NO hype).',
             'Language: content_ru is Russian for reading inside the app. content_en is English for copying/posting.',
+            'Taste hints:',
+            '- toneAdjectives may include things like: clear, honest, builder. Reflect them in word choice (e.g. honest = admit limits; builder = concrete implementation detail; clear = short sentences).',
+            '- ctaIntensity=off means no CTA/question line.',
             'Hard rules:',
             '- Do NOT start with filler like: "Quick update", "Excited to", "Big news", "Game-changer", "Stay tuned".',
             '- Also avoid RU filler like: "Апдейт:", "Коротко:", "Рад сообщить", "Небольшой апдейт", "Вкратце".',
@@ -335,6 +342,7 @@ Deno.serve(async req => {
                 '- Line 1: hook (specific question OR concrete claim OR before→after). No fluff.',
                 '- Line 2: what changed (from signals).',
                 '- Line 3 (optional): why it matters OR what’s next OR a specific question.',
+                'If taste.warmth="warm", you MAY add a tiny human connector (<= 60 chars) but it must still be specific (e.g. "Наконец-то убрал трение в X").',
                 'Make drafts DISTINCT in angle, like you would in a tweet tool that gives multiple variations:',
                 '1) Ship/update angle (what changed)',
                 '2) Insight/lesson angle (why it matters)',

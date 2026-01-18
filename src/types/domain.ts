@@ -45,10 +45,13 @@ export type TasteCtaIntensity = 'off' | 'soft' | 'normal' | 'strong'
 
 export type TasteLength = 'short' | 'medium' | 'long'
 
+export type TasteWarmth = 'neutral' | 'warm'
+
 export type TasteProfileData = {
   ctaIntensity?: TasteCtaIntensity | null
   toneAdjectives?: string[] | null
   length?: TasteLength | null
+  warmth?: TasteWarmth | null
 }
 
 export type TasteProfile = {

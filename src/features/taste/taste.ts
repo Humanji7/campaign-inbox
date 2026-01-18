@@ -1,4 +1,4 @@
-import type { TasteCtaIntensity, TasteLength, TasteProfileData } from '../../types/domain'
+import type { TasteCtaIntensity, TasteLength, TasteProfileData, TasteWarmth } from '../../types/domain'
 
 export function normalizeRawNotes(input: string | null | undefined): string | null {
   if (typeof input !== 'string') return null
@@ -18,6 +18,7 @@ export function normalizeTasteData(input: {
   ctaIntensity?: TasteCtaIntensity | null
   toneAdjectives?: string[] | null
   length?: TasteLength | null
+  warmth?: TasteWarmth | null
 }): TasteProfileData {
   const toneAdjectives =
     input.toneAdjectives && Array.isArray(input.toneAdjectives)
@@ -27,7 +28,7 @@ export function normalizeTasteData(input: {
   return {
     ctaIntensity: input.ctaIntensity ?? null,
     toneAdjectives: toneAdjectives && toneAdjectives.length ? toneAdjectives : null,
-    length: input.length ?? null
+    length: input.length ?? null,
+    warmth: input.warmth ?? null
   }
 }
-

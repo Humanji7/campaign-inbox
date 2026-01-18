@@ -19,13 +19,14 @@ describe('taste normalization', () => {
       normalizeTasteData({
         ctaIntensity: 'soft',
         toneAdjectives: ['  clear ', '', 'builder'],
-        length: 'short'
+        length: 'short',
+        warmth: 'warm'
       })
     ).toEqual({
       ctaIntensity: 'soft',
       toneAdjectives: ['clear', 'builder'],
-      length: 'short'
+      length: 'short',
+      warmth: 'warm'
     })
   })
 })
-

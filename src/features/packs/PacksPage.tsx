@@ -136,7 +136,8 @@ export default function PacksPage() {
             rawNotes: taste.rawNotes ?? null,
             ctaIntensity: taste.data.ctaIntensity ?? null,
             toneAdjectives: taste.data.toneAdjectives ?? null,
-            length: taste.data.length ?? null
+            length: taste.data.length ?? null,
+            warmth: taste.data.warmth ?? null
           }
         : undefined
 

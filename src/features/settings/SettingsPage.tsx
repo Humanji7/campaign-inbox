@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import type { TasteCtaIntensity, TasteLength } from '../../types/domain'
+import type { TasteCtaIntensity, TasteLength, TasteWarmth } from '../../types/domain'
 import { parseToneAdjectivesInput, normalizeRawNotes, normalizeTasteData } from '../taste/taste'
 import { useTasteProfile } from '../taste/useTasteProfile'
 
@@ -12,6 +12,7 @@ export default function SettingsPage() {
   const [ctaIntensity, setCtaIntensity] = useState<TasteCtaIntensity | 'default'>('default')
   const [tone, setTone] = useState('')
   const [length, setLength] = useState<TasteLength | 'default'>('default')
+  const [warmth, setWarmth] = useState<TasteWarmth | 'default'>('default')
   const [saveState, setSaveState] = useState<{ kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { kind: 'error'; message: string }>({
     kind: 'idle'
   })
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     setCtaIntensity(taste.data.ctaIntensity ?? 'default')
     setTone((taste.data.toneAdjectives ?? []).join(', '))
     setLength(taste.data.length ?? 'default')
+    setWarmth(taste.data.warmth ?? 'default')
     setSaveState({ kind: 'idle' })
   }, [taste])
 
@@ -45,7 +47,8 @@ export default function SettingsPage() {
       const data = normalizeTasteData({
         ctaIntensity: ctaIntensity === 'default' ? null : ctaIntensity,
         toneAdjectives: tone.trim().length ? parseToneAdjectivesInput(tone) : null,
-        length: length === 'default' ? null : length
+        length: length === 'default' ? null : length,
+        warmth: warmth === 'default' ? null : warmth
       })
 
       await save({
@@ -57,7 +60,7 @@ export default function SettingsPage() {
     } catch (e) {
       setSaveState({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
     }
-  }, [ctaIntensity, length, rawNotes, save, tone])
+  }, [ctaIntensity, length, rawNotes, save, tone, warmth])
 
   return (
     <div>
@@ -105,7 +108,7 @@ export default function SettingsPage() {
           />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block">
             <div className="text-xs font-semibold text-zinc-300">CTA intensity</div>
             <select
@@ -134,6 +137,20 @@ export default function SettingsPage() {
               <option value="short">Short</option>
               <option value="medium">Medium</option>
               <option value="long">Long</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <div className="text-xs font-semibold text-zinc-300">Warmth</div>
+            <select
+              className="mt-2 w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 outline-none focus:border-zinc-500"
+              value={warmth}
+              onChange={e => setWarmth(e.target.value as any)}
+              disabled={!supabase}
+            >
+              <option value="default">Default</option>
+              <option value="neutral">Neutral</option>
+              <option value="warm">Warm</option>
             </select>
           </label>
         </div>

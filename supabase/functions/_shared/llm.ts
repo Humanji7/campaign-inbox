@@ -54,6 +54,7 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
     reasoningEffort: LlmConfig['reasoningEffort'] | undefined
     maxTokens: number
   }): Promise<any> {
+    const reasoningEffort = getReasoningEffortForModel(input.model, args.reasoningEffort)
     const controller = new AbortController()
     const t = setTimeout(() => controller.abort('timeout'), timeoutMs)
     try {
@@ -67,7 +68,7 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
         body: JSON.stringify({
           model: input.model,
           ...(typeof temperature === 'number' ? { temperature } : {}),
-          ...(typeof args.reasoningEffort === 'string' ? { reasoning_effort: args.reasoningEffort } : {}),
+          ...(typeof reasoningEffort === 'string' ? { reasoning_effort: reasoningEffort } : {}),
           ...(responseFormat ? { response_format: responseFormat } : {}),
           // OpenAI: prefer max_completion_tokens (max_tokens is deprecated for Chat Completions).
           // Gemini OpenAI compatibility: supports max_completion_tokens as alias for max_tokens.
