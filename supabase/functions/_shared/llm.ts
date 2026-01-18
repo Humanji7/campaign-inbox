@@ -44,52 +44,58 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
 
   const baseUrl = cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl
   const temperature = supportsTemperature(input.model) ? cfg.temperature : undefined
-  const reasoningEffort = supportsReasoningEffort(input.model) ? cfg.reasoningEffort : undefined
+  const defaultReasoningEffort = supportsReasoningEffort(input.model) ? cfg.reasoningEffort : undefined
   const systemRole = prefersDeveloperRole(input.model) ? 'developer' : 'system'
   const responseFormat = supportsOpenAiJsonMode(baseUrl) ? { type: 'json_object' } : undefined
-  const controller = new AbortController()
+
   const timeoutMs = Number.isFinite(cfg.timeoutMs) && cfg.timeoutMs > 0 ? cfg.timeoutMs : 20000
-  const t = setTimeout(() => controller.abort('timeout'), timeoutMs)
 
-  let res: Response
-  try {
-    res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: input.model,
-        ...(typeof temperature === 'number' ? { temperature } : {}),
-        ...(typeof reasoningEffort === 'string' ? { reasoning_effort: reasoningEffort } : {}),
-        ...(responseFormat ? { response_format: responseFormat } : {}),
-        // OpenAI: prefer max_completion_tokens (max_tokens is deprecated for Chat Completions).
-        // Gemini OpenAI compatibility: supports max_completion_tokens as alias for max_tokens.
-        max_completion_tokens: cfg.maxTokens,
-        messages: [
-          { role: systemRole, content: input.system },
-          { role: 'user', content: input.user }
-        ]
+  async function doRequest(reasoningEffort: LlmConfig['reasoningEffort'] | undefined): Promise<any> {
+    const controller = new AbortController()
+    const t = setTimeout(() => controller.abort('timeout'), timeoutMs)
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cfg.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: input.model,
+          ...(typeof temperature === 'number' ? { temperature } : {}),
+          ...(typeof reasoningEffort === 'string' ? { reasoning_effort: reasoningEffort } : {}),
+          ...(responseFormat ? { response_format: responseFormat } : {}),
+          // OpenAI: prefer max_completion_tokens (max_tokens is deprecated for Chat Completions).
+          // Gemini OpenAI compatibility: supports max_completion_tokens as alias for max_tokens.
+          max_completion_tokens: cfg.maxTokens,
+          messages: [
+            { role: systemRole, content: input.system },
+            { role: 'user', content: input.user }
+          ]
+        })
       })
-    })
-  } catch (e) {
-    if (controller.signal.aborted) {
-      throw new Error(`LLM request timed out after ${timeoutMs}ms (baseUrl=${baseUrl})`)
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        throw new Error(`LLM error ${res.status} (baseUrl=${baseUrl}): ${txt}`)
+      }
+
+      const data = (await res.json()) as any
+      return data
+    } catch (e) {
+      if (controller.signal.aborted) {
+        throw new Error(`LLM request timed out after ${timeoutMs}ms (baseUrl=${baseUrl})`)
+      }
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`LLM network error (baseUrl=${baseUrl}): ${msg}`)
+    } finally {
+      clearTimeout(t)
     }
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`LLM network error (baseUrl=${baseUrl}): ${msg}`)
-  } finally {
-    clearTimeout(t)
   }
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`LLM error ${res.status} (baseUrl=${baseUrl}): ${txt}`)
-  }
+  let data = await doRequest(defaultReasoningEffort)
 
-  const data = (await res.json()) as any
   if (data?.error) {
     const msg =
       typeof data.error?.message === 'string'
@@ -100,8 +106,23 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
     throw new Error(`LLM returned error payload (HTTP 200) (baseUrl=${baseUrl}): ${msg}`)
   }
 
-  const extracted = extractTextFromChatCompletion(data)
-  const content = extracted.text
+  let extracted = extractTextFromChatCompletion(data)
+  let content = extracted.text
+
+  // GPT‑5 can burn completion budget on reasoning and return empty visible content with finish_reason=length.
+  // Retry once with reasoning_effort=none to bias towards emitting content.
+  const finishReason = String((extracted.meta ?? {})['finish_reason'] ?? '')
+  if (
+    (!content || content.trim() === '') &&
+    finishReason === 'length' &&
+    supportsReasoningEffort(input.model) &&
+    defaultReasoningEffort !== 'none'
+  ) {
+    data = await doRequest('none')
+    extracted = extractTextFromChatCompletion(data)
+    content = extracted.text
+  }
+
   if (!content || typeof content !== 'string' || content.trim() === '') {
     const meta = extracted.meta ?? {}
     throw new Error(`LLM returned no content (baseUrl=${baseUrl}): ${JSON.stringify(meta)}`)
