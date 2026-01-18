@@ -53,6 +53,7 @@ type ActionCard = {
   id: string
   status: 'ready' | 'needs_info'
   content: string
+  contentEn?: string
   version: number
   createdAt: string
   updatedAt: string
@@ -108,12 +109,19 @@ function clampTweet(text: string, maxChars = 280): string {
   return `${t.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`
 }
 
+function clampTweetOrEmpty(text: unknown): string {
+  const s = typeof text === 'string' ? text.trim() : ''
+  if (!s) return ''
+  return clampTweet(s)
+}
+
 function pickPrefix(toneAdjectives: string[]): string {
   const tones = new Set((toneAdjectives ?? []).map(t => String(t).toLowerCase().trim()))
-  if (tones.has('honest')) return 'Quick update:'
-  if (tones.has('builder')) return 'Shipped:'
-  if (tones.has('clear')) return 'Update:'
-  return 'Update:'
+  // Russian defaults (MVP): user reads drafts in RU.
+  if (tones.has('honest')) return 'Коротко:'
+  if (tones.has('builder')) return 'Обновление:'
+  if (tones.has('clear')) return 'Апдейт:'
+  return 'Апдейт:'
 }
 
 function ctaLine(intensity: TasteSummary['ctaIntensity']): string | null {
@@ -121,11 +129,11 @@ function ctaLine(intensity: TasteSummary['ctaIntensity']): string | null {
     case 'off':
       return null
     case 'soft':
-      return 'Feedback welcome.'
+      return 'Буду рад фидбеку.'
     case 'normal':
-      return 'What do you think?'
+      return 'Что думаете?'
     case 'strong':
-      return 'Try it and tell me what breaks.'
+      return 'Попробуйте и скажите, что сломалось.'
   }
 }
 
@@ -154,7 +162,7 @@ function fallbackCards(commits: CommitInput[], maxCards: number, taste: TasteSum
       taste.length === 'short'
         ? [base, cta].filter(Boolean)
         : taste.length === 'long'
-          ? [base, meta, cta, 'More soon.'].filter(Boolean)
+          ? [base, meta, cta, 'Продолжение скоро.'].filter(Boolean)
           : [base, meta, cta].filter(Boolean)
 
     const content = clampTweet(parts.join('\n'))
@@ -162,6 +170,7 @@ function fallbackCards(commits: CommitInput[], maxCards: number, taste: TasteSum
       id: makeUuid(),
       status: top.messageSubject.toLowerCase().includes('wip') ? 'needs_info' : 'ready',
       content: redactSecrets(content).slice(0, 3000),
+      contentEn: undefined,
       version: 1,
       createdAt: now,
       updatedAt: now,
@@ -219,7 +228,8 @@ Deno.serve(async req => {
       next?: string
       hookCandidates?: string[]
     }[] = []
-    let renderedCards: { status: 'ready' | 'needs_info'; content: string; riskChips: RiskChip[] }[] = []
+    let renderedCards: { status: 'ready' | 'needs_info'; content_ru: string; content_en: string; riskChips: RiskChip[] }[] =
+      []
     const llmDebug = {
       baseUrl: cfg.baseUrl,
       factsModel: cfg.factsModel,
@@ -292,9 +302,13 @@ Deno.serve(async req => {
       signals = Array.isArray(facts?.signals) ? facts.signals.slice(0, 12) : []
 
       // Stage 2: Render cards
-      let rendered: { cards: { status: 'ready' | 'needs_info'; content: string; riskChips: RiskChip[] }[] }
+      let rendered: {
+        cards: { status: 'ready' | 'needs_info'; content_ru: string; content_en: string; riskChips: RiskChip[] }[]
+      }
       try {
-        rendered = await chatJson<{ cards: { status: 'ready' | 'needs_info'; content: string; riskChips: RiskChip[] }[] }>(cfg, {
+        rendered = await chatJson<{
+          cards: { status: 'ready' | 'needs_info'; content_ru: string; content_en: string; riskChips: RiskChip[] }[]
+        }>(cfg, {
           model: cfg.renderModel,
           system: [
             'You write X/Twitter post drafts as cards.',
@@ -310,6 +324,9 @@ Deno.serve(async req => {
             task:
               [
                 'Generate up to maxCards tweet-sized drafts. Each draft is a standalone single tweet (no thread).',
+                'IMPORTANT: User reads drafts in Russian, but will copy/post in English.',
+                'For each card, output BOTH `content_ru` and `content_en` with the same meaning.',
+                'English should be natural (not word-for-word).',
                 'Make drafts DISTINCT in angle, like you would in a tweet tool that gives multiple variations:',
                 '1) Ship/update angle (what changed)',
                 '2) Insight/lesson angle (why it matters)',
@@ -323,6 +340,7 @@ Deno.serve(async req => {
               ].join('\n'),
             maxCards,
             taste: tasteSummary,
+            language: { display: 'ru', copy: 'en' },
             lengthGuidance: {
               short: 'Aim for ~120-200 chars, 1-2 short paragraphs.',
               medium: 'Aim for ~200-320 chars, 2-3 short paragraphs.',
@@ -341,7 +359,8 @@ Deno.serve(async req => {
               cards: [
                 {
                   status: 'ready|needs_info',
-                  content: 'string',
+                  content_ru: 'string',
+                  content_en: 'string',
                   riskChips: [
                     {
                       id: 'string',
@@ -385,7 +404,8 @@ Deno.serve(async req => {
     const cards = renderedCards.map(c => ({
       id: makeUuid(),
       status: c.status,
-      content: redactSecrets(String(c.content ?? '')).slice(0, 3000),
+      content: redactSecrets(clampTweetOrEmpty(c.content_ru)).slice(0, 3000),
+      contentEn: redactSecrets(clampTweetOrEmpty(c.content_en)).slice(0, 3000) || undefined,
       version: 1,
       createdAt: now,
       updatedAt: now,

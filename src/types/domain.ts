@@ -64,6 +64,7 @@ export type ActionCard = {
   id: string
   status: CardStatus
   content: string
+  contentEn?: string
   brief?: CardBrief
   version: number
   createdAt: string

@@ -7,6 +7,7 @@ type DbCardRow = {
   user_id: string
   status: string
   content: string
+  content_en: string | null
   version: number
   brief: unknown
   facts: unknown
@@ -28,6 +29,7 @@ function toActionCard(row: DbCardRow): ActionCard {
     id: row.id,
     status,
     content: row.content,
+    contentEn: row.content_en ?? undefined,
     brief,
     version: row.version,
     createdAt: row.created_at,
@@ -43,7 +45,7 @@ export async function listCards(supabase: SupabaseClient): Promise<ActionCard[]>
   const { data, error } = await supabase
     .from('action_cards')
     .select(
-      'id,user_id,status,content,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
+      'id,user_id,status,content,content_en,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
     )
     .order('created_at', { ascending: false })
 
@@ -61,6 +63,7 @@ export async function insertCards(
     user_id: userId,
     status: card.status,
     content: card.content,
+    content_en: card.contentEn ?? null,
     version: card.version,
     brief: normalizeCardBriefForDb(card.brief),
     facts: card.facts,
@@ -73,7 +76,7 @@ export async function insertCards(
     .from('action_cards')
     .insert(rows)
     .select(
-      'id,user_id,status,content,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
+      'id,user_id,status,content,content_en,version,brief,facts,risk_chips,posted_url,posted_at,created_at,updated_at'
     )
 
   if (error) throw error
@@ -83,7 +86,7 @@ export async function insertCards(
 export async function updateCardDraft(
   supabase: SupabaseClient,
   cardId: string,
-  draft: { content: string; brief?: CardBrief; version: number; status?: CardStatus }
+  draft: { content: string; contentEn?: string | null; brief?: CardBrief; version: number; status?: CardStatus }
 ): Promise<void> {
   const update: Record<string, unknown> = {
     content: draft.content,
@@ -91,6 +94,7 @@ export async function updateCardDraft(
     version: draft.version,
     updated_at: new Date().toISOString()
   }
+  if (draft.contentEn !== undefined) update.content_en = draft.contentEn
   if (draft.status) update.status = draft.status
 
   const { error } = await supabase

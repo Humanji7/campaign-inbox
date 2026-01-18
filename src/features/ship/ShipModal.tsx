@@ -12,6 +12,7 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
 
   const [step, setStep] = useState<'copy' | 'open' | 'url' | 'refine'>('copy')
   const [copied, setCopied] = useState(false)
+  const [previewLang, setPreviewLang] = useState<'ru' | 'en'>('ru')
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [refineBusy, setRefineBusy] = useState(false)
@@ -19,15 +20,22 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
   const resetAndClose = useCallback(() => {
     setStep('copy')
     setCopied(false)
+    setPreviewLang('ru')
     setUrl('')
     setError(null)
     setRefineBusy(false)
     onClose()
   }, [onClose])
 
+  const ruText = card?.content ?? ''
+  const enText = card?.contentEn ?? ''
+  const activeText = previewLang === 'en' && enText ? enText : ruText
+
   const intentUrl = useMemo(() => {
     if (!card) return null
-    const text = encodeURIComponent(card.content)
+    // Default to EN for posting if available.
+    const textToPost = card.contentEn?.trim() ? card.contentEn : card.content
+    const text = encodeURIComponent(textToPost)
     return `https://x.com/intent/tweet?text=${text}`
   }, [card])
 
@@ -35,8 +43,10 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
     if (!card) return
     setError(null)
     try {
-      await navigator.clipboard.writeText(card.content)
+      const textToCopy = card.contentEn?.trim() ? card.contentEn : card.content
+      await navigator.clipboard.writeText(textToCopy)
       setCopied(true)
+      if (card.contentEn?.trim()) setPreviewLang('en')
       setStep('open')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Clipboard error')
@@ -117,8 +127,30 @@ export default function ShipModal({ cardId, onClose }: { cardId: string | null; 
         </div>
 
         <div className="mt-4 rounded-2xl border border-zinc-800 p-3">
-          <div className="text-xs text-zinc-400">Preview</div>
-          <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">{card.content}</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-zinc-400">Preview</div>
+            {card.contentEn?.trim() ? (
+              <div className="flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 p-1 text-xs">
+                <button
+                  className={`rounded-lg px-2 py-1 ${previewLang === 'ru' ? 'bg-white text-black' : 'text-zinc-300'}`}
+                  onClick={() => setPreviewLang('ru')}
+                  type="button"
+                >
+                  RU
+                </button>
+                <button
+                  className={`rounded-lg px-2 py-1 ${previewLang === 'en' ? 'bg-white text-black' : 'text-zinc-300'}`}
+                  onClick={() => setPreviewLang('en')}
+                  type="button"
+                >
+                  EN
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-500">EN not available</div>
+            )}
+          </div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">{activeText}</div>
         </div>
 
         {error ? <div className="mt-3 text-sm text-red-300">{error}</div> : null}

@@ -71,9 +71,13 @@ export default function QuickEditSheet({
     const nextVersion = card.version + 1
     const nextStatus = markReady ? 'ready' : card.status
     const brief = briefNormalized ?? undefined
+    const contentChanged = postText !== card.content
+    const nextContentEn = contentChanged ? null : card.contentEn ?? null
+    const contentEnPatch = contentChanged ? undefined : card.contentEn ?? undefined
 
     updateCard(card.id, {
       content: postText,
+      contentEn: contentEnPatch,
       brief,
       status: nextStatus,
       version: nextVersion,
@@ -84,6 +88,7 @@ export default function QuickEditSheet({
       try {
         await updateCardDraft(supabase, card.id, {
           content: postText,
+          contentEn: nextContentEn,
           brief,
           version: nextVersion,
           status: nextStatus
