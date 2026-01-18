@@ -200,7 +200,8 @@ Deno.serve(async req => {
     }
 
     const maxCards = Math.max(1, Math.min(10, Number(body.maxCards ?? 3)))
-    const commits = normalizeCommits(body.commits).slice(0, 60)
+    // Keep context small to preserve output budget (especially for RU+EN).
+    const commits = normalizeCommits(body.commits).slice(0, 40)
     if (commits.length === 0) return jsonResponse({ cards: [] }, 200, corsHeaders)
 
     const cfg = getLlmConfig()
@@ -299,7 +300,7 @@ Deno.serve(async req => {
         throw new Error(`facts stage failed (model=${cfg.factsModel}): ${msg}`)
       }
 
-      signals = Array.isArray(facts?.signals) ? facts.signals.slice(0, 12) : []
+      signals = Array.isArray(facts?.signals) ? facts.signals.slice(0, 10) : []
 
       // Stage 2: Render cards
       let rendered: {
@@ -314,8 +315,10 @@ Deno.serve(async req => {
             'You write X/Twitter post drafts as cards.',
             'Output ONLY valid JSON (no markdown, no code fences).',
             'Voice: concise, concrete, human. Avoid generic “corporate AI” vibes.',
+            'Language: content_ru is Russian for reading inside the app. content_en is English for copying/posting.',
             'Hard rules:',
-            '- Do NOT use filler like: "Quick update", "Excited to", "Big news", "Game-changer", "Stay tuned".',
+            '- Do NOT start with filler like: "Quick update", "Excited to", "Big news", "Game-changer", "Stay tuned".',
+            '- Also avoid RU filler like: "Апдейт:", "Коротко:", "Рад сообщить", "Небольшой апдейт", "Вкратце".',
             '- Each draft must include at least ONE concrete detail from commits/signals (specific noun/feature).',
             '- Each draft must include "why it matters" OR "what’s next" in plain language.',
             '- No code blocks, no file paths, no secrets.'
@@ -327,6 +330,11 @@ Deno.serve(async req => {
                 'IMPORTANT: User reads drafts in Russian, but will copy/post in English.',
                 'For each card, output BOTH `content_ru` and `content_en` with the same meaning.',
                 'English should be natural (not word-for-word).',
+                '',
+                'Structure (for both languages):',
+                '- Line 1: hook (specific question OR concrete claim OR before→after). No fluff.',
+                '- Line 2: what changed (from signals).',
+                '- Line 3 (optional): why it matters OR what’s next OR a specific question.',
                 'Make drafts DISTINCT in angle, like you would in a tweet tool that gives multiple variations:',
                 '1) Ship/update angle (what changed)',
                 '2) Insight/lesson angle (why it matters)',
@@ -354,7 +362,11 @@ Deno.serve(async req => {
               'Before → after'
             ],
             signals,
-            commitsSample: commits.slice(0, 20),
+            commitsSample: commits.slice(0, 8).map(c => ({
+              repoFullName: c.repoFullName,
+              sha7: c.sha.slice(0, 7),
+              messageSubject: c.messageSubject
+            })),
             output: {
               cards: [
                 {
