@@ -44,13 +44,16 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
 
   const baseUrl = cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl
   const temperature = supportsTemperature(input.model) ? cfg.temperature : undefined
-  const defaultReasoningEffort = supportsReasoningEffort(input.model) ? cfg.reasoningEffort : undefined
+  const defaultReasoningEffort = getReasoningEffortForModel(input.model, cfg.reasoningEffort)
   const systemRole = prefersDeveloperRole(input.model) ? 'developer' : 'system'
   const responseFormat = supportsOpenAiJsonMode(baseUrl) ? { type: 'json_object' } : undefined
 
   const timeoutMs = Number.isFinite(cfg.timeoutMs) && cfg.timeoutMs > 0 ? cfg.timeoutMs : 20000
 
-  async function doRequest(reasoningEffort: LlmConfig['reasoningEffort'] | undefined): Promise<any> {
+  async function doRequest(args: {
+    reasoningEffort: LlmConfig['reasoningEffort'] | undefined
+    maxTokens: number
+  }): Promise<any> {
     const controller = new AbortController()
     const t = setTimeout(() => controller.abort('timeout'), timeoutMs)
     try {
@@ -64,11 +67,11 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
         body: JSON.stringify({
           model: input.model,
           ...(typeof temperature === 'number' ? { temperature } : {}),
-          ...(typeof reasoningEffort === 'string' ? { reasoning_effort: reasoningEffort } : {}),
+          ...(typeof args.reasoningEffort === 'string' ? { reasoning_effort: args.reasoningEffort } : {}),
           ...(responseFormat ? { response_format: responseFormat } : {}),
           // OpenAI: prefer max_completion_tokens (max_tokens is deprecated for Chat Completions).
           // Gemini OpenAI compatibility: supports max_completion_tokens as alias for max_tokens.
-          max_completion_tokens: cfg.maxTokens,
+          max_completion_tokens: args.maxTokens,
           messages: [
             { role: systemRole, content: input.system },
             { role: 'user', content: input.user }
@@ -94,7 +97,7 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
     }
   }
 
-  let data = await doRequest(defaultReasoningEffort)
+  let data = await doRequest({ reasoningEffort: defaultReasoningEffort, maxTokens: cfg.maxTokens })
 
   if (data?.error) {
     const msg =
@@ -110,15 +113,16 @@ export async function chatJson<T>(cfg: LlmConfig, input: { model: string; system
   let content = extracted.text
 
   // GPT‑5 can burn completion budget on reasoning and return empty visible content with finish_reason=length.
-  // Retry once with reasoning_effort=none to bias towards emitting content.
+  // Retry once with a larger completion budget to allow emitting JSON.
   const finishReason = String((extracted.meta ?? {})['finish_reason'] ?? '')
   if (
     (!content || content.trim() === '') &&
     finishReason === 'length' &&
     supportsReasoningEffort(input.model) &&
-    defaultReasoningEffort !== 'none'
+    cfg.maxTokens < 4096
   ) {
-    data = await doRequest('none')
+    const bumped = Math.min(4096, Math.max(cfg.maxTokens + 256, cfg.maxTokens * 2))
+    data = await doRequest({ reasoningEffort: defaultReasoningEffort, maxTokens: bumped })
     extracted = extractTextFromChatCompletion(data)
     content = extracted.text
   }
@@ -144,6 +148,23 @@ function supportsReasoningEffort(model: string): boolean {
   const m = (model ?? '').toLowerCase()
   // Reasoning effort exists for newer reasoning families; keep it narrow to avoid 400s.
   return m.startsWith('gpt-5') || m.startsWith('o')
+}
+
+function getReasoningEffortForModel(
+  model: string,
+  effort: LlmConfig['reasoningEffort'] | undefined
+): LlmConfig['reasoningEffort'] | undefined {
+  if (!supportsReasoningEffort(model)) return undefined
+  if (!effort) return undefined
+
+  const m = (model ?? '').toLowerCase()
+  // OpenAI GPT‑5 currently rejects "none" and "xhigh" (supported: minimal|low|medium|high).
+  if (m.startsWith('gpt-5')) {
+    if (effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high') return effort
+    return 'minimal'
+  }
+
+  return effort
 }
 
 function prefersDeveloperRole(model: string): boolean {

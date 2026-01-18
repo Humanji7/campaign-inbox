@@ -142,7 +142,7 @@ export default function PacksPage() {
 
       const invokeOnce = async (accessToken: string) => {
         return await sb.functions.invoke('generate-cards', {
-          body: { commits, maxCards: 6, taste: tastePayload },
+          body: { commits, maxCards: 4, taste: tastePayload },
           headers: { Authorization: `Bearer ${accessToken}` }
         })
       }
