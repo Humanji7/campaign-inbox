@@ -211,7 +211,14 @@ Deno.serve(async req => {
 
     let mode: 'llm' | 'fallback_llm_error' = 'llm'
     let llmError: string | null = null
-    let signals: { summary: string; repoFullName?: string; relatedShas?: string[] }[] = []
+    let signals: {
+      summary: string
+      repoFullName?: string
+      relatedShas?: string[]
+      why?: string
+      next?: string
+      hookCandidates?: string[]
+    }[] = []
     let renderedCards: { status: 'ready' | 'needs_info'; content: string; riskChips: RiskChip[] }[] = []
     const llmDebug = {
       baseUrl: cfg.baseUrl,
@@ -224,16 +231,57 @@ Deno.serve(async req => {
 
     try {
       // Stage 1: Facts/signals extraction
-      let facts: { signals: { summary: string; repoFullName?: string; relatedShas?: string[] }[] }
+      let facts: {
+        signals: {
+          summary: string
+          repoFullName?: string
+          relatedShas?: string[]
+          why?: string
+          next?: string
+          hookCandidates?: string[]
+        }[]
+      }
       try {
-        facts = await chatJson<{ signals: { summary: string; repoFullName?: string; relatedShas?: string[] }[] }>(cfg, {
+        facts = await chatJson<{
+          signals: {
+            summary: string
+            repoFullName?: string
+            relatedShas?: string[]
+            why?: string
+            next?: string
+            hookCandidates?: string[]
+          }[]
+        }>(cfg, {
           model: cfg.factsModel,
-          system: 'You extract structured, publishable “signals” from git commit messages. Output ONLY valid JSON.',
+          system:
+            'You extract structured, publishable “signals” from git commit messages. Output ONLY valid JSON (no markdown, no code fences).',
           user: JSON.stringify({
-            task:
-              'Extract up to 8 short signals (facts/insights/changes/lessons/next steps) from these commits. No secrets. No code. Be specific and helpful for building-in-public posts.',
-            commits,
-            output: { signals: [{ summary: 'string', repoFullName: 'string?', relatedShas: ['string?'] }] }
+            task: [
+              'Extract up to 10 specific signals from these commits.',
+              'Each signal should feel like something a builder would say publicly (build-in-public).',
+              'Be concrete: name the thing changed (noun), what changed (verb), and why it matters.',
+              'If commits are vague, still output a signal but make it explicit what detail is missing in `why`/`next`.',
+              'No secrets. No code. No file paths. No internal tokens.'
+            ].join('\n'),
+            taste: tasteSummary,
+            commits: commits.map(c => ({
+              repoFullName: c.repoFullName,
+              sha7: c.sha.slice(0, 7),
+              messageSubject: c.messageSubject,
+              authoredAt: c.authoredAt
+            })),
+            output: {
+              signals: [
+                {
+                  summary: 'string (one-sentence, specific)',
+                  repoFullName: 'string?',
+                  relatedShas: ['sha7?'],
+                  why: 'string? (one short sentence)',
+                  next: 'string? (one short sentence)',
+                  hookCandidates: ['string? (<= 90 chars)', '...']
+                }
+              ]
+            }
           })
         })
       } catch (e) {
@@ -248,10 +296,31 @@ Deno.serve(async req => {
       try {
         rendered = await chatJson<{ cards: { status: 'ready' | 'needs_info'; content: string; riskChips: RiskChip[] }[] }>(cfg, {
           model: cfg.renderModel,
-          system: 'You generate X/Twitter post drafts as cards. Output ONLY valid JSON. Keep it concise. No code blocks.',
+          system: [
+            'You write X/Twitter post drafts as cards.',
+            'Output ONLY valid JSON (no markdown, no code fences).',
+            'Voice: concise, concrete, human. Avoid generic “corporate AI” vibes.',
+            'Hard rules:',
+            '- Do NOT use filler like: "Quick update", "Excited to", "Big news", "Game-changer", "Stay tuned".',
+            '- Each draft must include at least ONE concrete detail from commits/signals (specific noun/feature).',
+            '- Each draft must include "why it matters" OR "what’s next" in plain language.',
+            '- No code blocks, no file paths, no secrets.'
+          ].join('\n'),
           user: JSON.stringify({
             task:
-              'Using taste preferences and signals, generate up to maxCards post drafts. Each draft is a card. If missing context, set status needs_info and add 1-3 riskChips with clear labels and fixActions.',
+              [
+                'Generate up to maxCards tweet-sized drafts. Each draft is a standalone single tweet (no thread).',
+                'Make drafts DISTINCT in angle, like you would in a tweet tool that gives multiple variations:',
+                '1) Ship/update angle (what changed)',
+                '2) Insight/lesson angle (why it matters)',
+                '3) Next step/teaser angle (what’s next)',
+                '4) Problem/solution angle (before → after)',
+                '5) Question angle (ask a specific question, not generic)',
+                '6) Contrarian angle (only if it fits; otherwise skip)',
+                '',
+                'If you cannot make a draft specific without guessing, set status=needs_info and add riskChips with fixActions that ask for the missing detail.',
+                'Apply taste preferences, especially raw notes (talk-mode).'
+              ].join('\n'),
             maxCards,
             taste: tasteSummary,
             lengthGuidance: {
@@ -259,6 +328,13 @@ Deno.serve(async req => {
               medium: 'Aim for ~200-320 chars, 2-3 short paragraphs.',
               long: 'Aim for up to 280 chars. Use tight structure; no threads in MVP.'
             },
+            hookStrategies: [
+              'Question (specific, not generic)',
+              'Bold claim (only if true)',
+              'Curiosity gap (no clickbait)',
+              'Concrete number / constraint (if available)',
+              'Before → after'
+            ],
             signals,
             commitsSample: commits.slice(0, 20),
             output: {
