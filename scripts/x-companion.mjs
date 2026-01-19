@@ -156,6 +156,39 @@ function pickUrl(tweetLike) {
   return id ? `https://x.com/i/status/${id}` : null
 }
 
+function pickNumberFromKeys(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+    if (typeof v === 'string' && v.trim() && !Number.isNaN(Number(v))) return Number(v)
+  }
+  return null
+}
+
+function pickMetrics(tweetLike) {
+  const likeCount = pickNumberFromKeys(tweetLike, ['favorite_count', 'like_count', 'likes', 'favs'])
+  const replyCount = pickNumberFromKeys(tweetLike, ['reply_count', 'replies'])
+  const repostCount = pickNumberFromKeys(tweetLike, ['retweet_count', 'repost_count', 'reposts'])
+  const quoteCount = pickNumberFromKeys(tweetLike, ['quote_count', 'quotes'])
+  return {
+    likeCount,
+    replyCount,
+    repostCount,
+    quoteCount
+  }
+}
+
+function isReply(tweetLike) {
+  const v =
+    tweetLike?.in_reply_to_status_id ??
+    tweetLike?.in_reply_to_status_id_str ??
+    tweetLike?.in_reply_to_tweet_id ??
+    tweetLike?.in_reply_to_tweet_id_str ??
+    tweetLike?.inReplyToStatusId ??
+    null
+  return Boolean(v)
+}
+
 async function postJson(url, headers, body) {
   const res = await fetch(url, {
     method: 'POST',
@@ -235,20 +268,22 @@ async function main() {
   for (const t of listTweets) {
     const id = pickId(t)
     if (!id) continue
+    const metrics = pickMetrics(t)
     events.push({
       source: 'x',
-      type: 'tweet',
+      type: isReply(t) ? 'reply' : 'tweet',
       externalId: id,
       occurredAt: pickOccurredAt(t),
       actorHandle: pickHandle(t),
       url: pickUrl(t),
       text: pickText(t),
-      payload: { feed: 'list', list: listIdOrUrl }
+      payload: { feed: 'list', list: listIdOrUrl, metrics }
     })
   }
   for (const t of mentionTweets) {
     const id = pickId(t)
     if (!id) continue
+    const metrics = pickMetrics(t)
     events.push({
       source: 'x',
       type: 'mention',
@@ -257,7 +292,7 @@ async function main() {
       actorHandle: pickHandle(t),
       url: pickUrl(t),
       text: pickText(t),
-      payload: { feed: 'mentions' }
+      payload: { feed: 'mentions', metrics }
     })
   }
 
