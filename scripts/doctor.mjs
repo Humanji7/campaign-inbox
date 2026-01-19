@@ -77,6 +77,12 @@ else warn('Local .env missing TELEGRAM_BOT_TOKEN', 'Needed only for Telegram com
 if (localEnv.get('TELEGRAM_CHAT_ID')) ok('Local .env has TELEGRAM_CHAT_ID (optional)')
 else warn('Local .env missing TELEGRAM_CHAT_ID', 'Needed only for Telegram companion (restrict updates)')
 
+if (localEnv.get('TELEGRAM_API_ID')) ok('Local .env has TELEGRAM_API_ID (optional)')
+else warn('Local .env missing TELEGRAM_API_ID', 'Needed only for Telegram user-session companion (MTProto)')
+
+if (localEnv.get('TELEGRAM_API_HASH')) ok('Local .env has TELEGRAM_API_HASH (optional)')
+else warn('Local .env missing TELEGRAM_API_HASH', 'Needed only for Telegram user-session companion (MTProto)')
+
 // Layer 2: Supabase CLI + project linkage
 const cli = run('supabase', ['--version'])
 if (!cli.ok) {

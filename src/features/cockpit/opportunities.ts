@@ -5,6 +5,7 @@ export type Opportunity = {
   source: 'x' | 'telegram'
   kind: 'mention' | 'target_post' | 'link_drop'
   actorHandle: string | null
+  targetHandle: string | null
   occurredAt: string
   url: string | null
   text: string | null
@@ -59,8 +60,8 @@ function isTargetPost(e: UnifiedEvent): boolean {
   return isX(e) && (e.type === 'tweet' || e.type === 'reply')
 }
 
-function isTgInbox(e: UnifiedEvent): boolean {
-  return isTelegram(e) && e.type === 'inbox'
+function isTgMessage(e: UnifiedEvent): boolean {
+  return isTelegram(e) && e.type === 'message'
 }
 
 function makeDedupeKey(e: UnifiedEvent): string {
@@ -85,7 +86,7 @@ function gotReplyFromState(s: OpportunityState | undefined): boolean {
 function whyLine(e: UnifiedEvent): string {
   if (isMention(e)) return 'They mentioned you — reply fast.'
   if (e.type === 'reply') return 'They’re already in a thread — easy to join.'
-  if (isTgInbox(e)) return 'Telegram link-drop — treat as curated input.'
+  if (isTgMessage(e)) return 'Telegram activity — respond where the thread is live.'
   const m = getMetrics(e)
   if (m.reply >= 2) return 'Has replies — conversation is forming.'
   if (m.like >= 5) return 'Getting attention — good time to engage.'
@@ -106,7 +107,7 @@ export function buildOpportunities(input: {
   const candidates: Opportunity[] = []
 
   for (const e of input.events) {
-    if (!isMention(e) && !isTargetPost(e) && !isTgInbox(e)) continue
+    if (!isMention(e) && !isTargetPost(e) && !isTgMessage(e)) continue
     const t = Date.parse(e.occurred_at)
     if (!Number.isFinite(t) || t < cutoff) continue
 
@@ -114,18 +115,19 @@ export function buildOpportunities(input: {
     const st = byKey.get(dedupeKey)
     const state = (st?.status ?? 'new') as OpportunityState['status']
 
-    const base = isMention(e) ? 90 : isTgInbox(e) ? 65 : 55
+    const base = isMention(e) ? 90 : isTgMessage(e) ? 70 : 55
     const score = Math.round(
       base +
         recencyScore(e.occurred_at) +
-        (isMention(e) ? 0 : isTgInbox(e) ? (e.url ? 10 : 0) : engagementScore(e))
+        (isMention(e) ? 0 : isTgMessage(e) ? (e.url ? 10 : 0) : engagementScore(e))
     )
 
     candidates.push({
       dedupeKey,
       source: isTelegram(e) ? 'telegram' : 'x',
-      kind: isMention(e) ? 'mention' : isTgInbox(e) ? 'link_drop' : 'target_post',
+      kind: isMention(e) ? 'mention' : isTgMessage(e) ? 'link_drop' : 'target_post',
       actorHandle: e.actor_handle,
+      targetHandle: e.target_handle ?? null,
       occurredAt: e.occurred_at,
       url: e.url,
       text: e.text,

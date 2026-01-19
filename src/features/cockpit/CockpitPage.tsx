@@ -101,7 +101,7 @@ export default function CockpitPage() {
   const sb = supabase
   const [showDebug, setShowDebug] = useState(false)
   const [includeMentions, setIncludeMentions] = useState(true)
-  const [newOnly, setNewOnly] = useState(true)
+  const [queueOnly, setQueueOnly] = useState(true)
   const [ageHours, setAgeHours] = useState<6 | 24 | 72>(24)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
@@ -135,13 +135,39 @@ export default function CockpitPage() {
   const workItems = data?.workItems ?? []
   const lastSync = events[0]?.occurred_at ?? null
 
-  const opportunitiesAll = useMemo(() => buildOpportunities({ events, states, maxAgeHours: ageHours, max: 30 }), [events, states, ageHours])
+  const workByKey = useMemo(() => {
+    const map = new Map<string, WorkItem>()
+    for (const w of workItems) map.set(w.dedupe_key, w)
+    return map
+  }, [workItems])
+
+  const stageFor = useCallback(
+    (dedupeKey: string, fallbackState: OpportunityState['status']): WorkItem['stage'] => {
+      const w = workByKey.get(dedupeKey)
+      if (w?.stage) return w.stage
+      if (fallbackState === 'done') return 'done'
+      if (fallbackState === 'ignored') return 'ignored'
+      return 'new'
+    },
+    [workByKey]
+  )
+
+  const opportunitiesAll = useMemo(
+    () => buildOpportunities({ events, states, maxAgeHours: ageHours, max: 30 }),
+    [events, states, ageHours]
+  )
+
   const opportunities = useMemo(() => {
     let list = opportunitiesAll
-    if (newOnly) list = list.filter(o => o.state === 'new')
     if (!includeMentions) list = list.filter(o => o.kind !== 'mention')
+    if (queueOnly) {
+      list = list.filter(o => {
+        const st = stageFor(o.dedupeKey, o.state)
+        return st !== 'done' && st !== 'ignored'
+      })
+    }
     return list.slice(0, 12)
-  }, [opportunitiesAll, includeMentions, newOnly])
+  }, [opportunitiesAll, includeMentions, queueOnly, stageFor])
 
   const weekStart = useMemo(() => weekStartIsoUtc(), [])
   const repliesThisWeek = useMemo(() => {
@@ -167,12 +193,6 @@ export default function CockpitPage() {
     if (!key) return opportunities[0] ?? null
     return opportunitiesAll.find(o => o.dedupeKey === key) ?? opportunities[0] ?? null
   }, [selectedKey, opportunities, opportunitiesAll])
-
-  const workByKey = useMemo(() => {
-    const map = new Map<string, WorkItem>()
-    for (const w of workItems) map.set(w.dedupe_key, w)
-    return map
-  }, [workItems])
 
   useEffect(() => {
     if (!selected) return
@@ -220,18 +240,24 @@ export default function CockpitPage() {
         return
       }
       if (e.key === 'i') {
-        void applyState(selected.dedupeKey, 'ignored', { got_reply: selected.gotReply })
+        void Promise.all([
+          applyState(selected.dedupeKey, 'ignored', { got_reply: selected.gotReply }),
+          upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'ignored' })
+        ])
         return
       }
       if (e.key === 'd') {
-        void applyState(selected.dedupeKey, 'done', { got_reply: selected.gotReply })
+        void Promise.all([
+          applyState(selected.dedupeKey, 'done', { got_reply: selected.gotReply }),
+          upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'done' })
+        ])
         return
       }
     }
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [applyState, opportunities, selected])
+  }, [applyState, opportunities, sb, selected])
 
   const toggleGotReply = useCallback(() => {
     if (!selected) return
@@ -276,13 +302,19 @@ export default function CockpitPage() {
 
   const actionIgnore = useCallback(() => {
     if (!selected) return
-    void applyState(selected.dedupeKey, 'ignored', { got_reply: selected.gotReply })
-  }, [applyState, selected])
+    void Promise.all([
+      applyState(selected.dedupeKey, 'ignored', { got_reply: selected.gotReply }),
+      upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'ignored' })
+    ])
+  }, [applyState, sb, selected])
 
   const actionDone = useCallback(() => {
     if (!selected) return
-    void applyState(selected.dedupeKey, 'done', { got_reply: selected.gotReply })
-  }, [applyState, selected])
+    void Promise.all([
+      applyState(selected.dedupeKey, 'done', { got_reply: selected.gotReply }),
+      upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'done' })
+    ])
+  }, [applyState, sb, selected])
 
   return (
     <div className="space-y-4">
@@ -330,12 +362,12 @@ export default function CockpitPage() {
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-2 text-xs text-zinc-300">
                   <input
-                    checked={newOnly}
+                    checked={queueOnly}
                     className="accent-zinc-200"
-                    onChange={e => setNewOnly(e.target.checked)}
+                    onChange={e => setQueueOnly(e.target.checked)}
                     type="checkbox"
                   />
-                  New only
+                  Queue only
                 </label>
                 <label className="flex items-center gap-2 text-xs text-zinc-300">
                   <input
@@ -380,6 +412,7 @@ export default function CockpitPage() {
                 {opportunities.map(o => {
                   const active = selected?.dedupeKey === o.dedupeKey
                   const src = o.source === 'telegram' ? 'TG' : 'X'
+                  const stage = stageFor(o.dedupeKey, o.state)
                   return (
                     <button
                       key={o.dedupeKey}
@@ -395,13 +428,21 @@ export default function CockpitPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 text-[11px] text-zinc-400">
                             <Pill>{src}</Pill>
-                            <span className="font-medium text-zinc-200">@{o.actorHandle ?? 'unknown'}</span>
+                            <span className="font-medium text-zinc-200">
+                              {o.source === 'telegram' ? `@${o.actorHandle ?? 'unknown'}` : `@${o.actorHandle ?? 'unknown'}`}
+                            </span>
+                            {o.source === 'telegram' && o.targetHandle ? (
+                              <>
+                                <span>in</span>
+                                <span className="text-zinc-300">@{o.targetHandle}</span>
+                              </>
+                            ) : null}
                             <span>·</span>
                             <span>{fmtTime(o.occurredAt)}</span>
                             <Pill>score {o.score}</Pill>
                             {o.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
-                            {o.kind === 'link_drop' ? <Pill tone="warn">link-drop</Pill> : null}
-                            {o.state !== 'new' ? <Pill>{o.state}</Pill> : null}
+                            {o.kind === 'link_drop' ? <Pill tone="warn">tg msg</Pill> : null}
+                            {stage !== 'new' ? <Pill>{stage}</Pill> : null}
                             {o.gotReply ? <Pill tone="good">got reply</Pill> : null}
                           </div>
                           <div className="mt-1 text-sm text-zinc-100">{shortText(o.text, 160)}</div>
@@ -551,6 +592,9 @@ function OpportunityDetail({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
             <span className="font-medium text-zinc-200">@{opportunity.actorHandle ?? 'unknown'}</span>
+            {opportunity.source === 'telegram' && opportunity.targetHandle ? (
+              <span className="text-zinc-500">in @{opportunity.targetHandle}</span>
+            ) : null}
             <span>·</span>
             <span>{fmtTime(opportunity.occurredAt)}</span>
             <Pill>score {opportunity.score}</Pill>

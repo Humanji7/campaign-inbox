@@ -20,3 +20,8 @@ sqlite_mcp_server.db
 
 # Local companion state
 .tg-companion-offset.json
+
+# Telegram user-session companion
+.tg-user.session
+.tg-user-offset.json
+.tg-user-watch.json

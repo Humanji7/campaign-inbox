@@ -12,6 +12,9 @@
     "deploy:ingest-events": "supabase functions deploy ingest-events --no-verify-jwt",
     "x:companion:once": "node scripts/x-companion.mjs",
     "tg:companion:once": "node scripts/tg-companion.mjs",
+    "tg:bot:once": "node scripts/tg-companion.mjs",
+    "tg:user:setup": "node scripts/tg-user-setup.mjs",
+    "tg:user:once": "node scripts/tg-user-companion.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -20,6 +23,7 @@
     "@use-gesture/react": "^10.3.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "telegram": "^2.26.22",
     "swr": "^2.3.0",
     "zustand": "^5.0.3"
   },
