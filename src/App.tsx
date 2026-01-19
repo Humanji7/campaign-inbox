@@ -31,7 +31,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh">
-      <div className="mx-auto max-w-md px-4 pb-20 pt-6">{content}</div>
+      <div className="mx-auto max-w-5xl px-4 pb-20 pt-6">{content}</div>
       <BottomTabs tab={tab} onChange={setTab} />
     </div>
   )
@@ -40,7 +40,7 @@ export default function App() {
 function BottomTabs({ tab, onChange }: { tab: TabKey; onChange: (t: TabKey) => void }) {
   return (
     <div className="fixed inset-x-0 bottom-0 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-5 px-2 py-2 text-xs">
+      <div className="mx-auto grid max-w-5xl grid-cols-5 px-2 py-2 text-xs">
         <TabButton active={tab === 'cockpit'} onClick={() => onChange('cockpit')}>
           Cockpit
         </TabButton>
@@ -73,7 +73,7 @@ function TabButton({
   return (
     <button
       className={[
-        'rounded-xl px-2 py-3 font-medium transition',
+        'rounded-xl px-2 py-3 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500',
         active ? 'bg-zinc-800 text-white' : 'text-zinc-300 hover:bg-zinc-900'
       ].join(' ')}
       onClick={onClick}
