@@ -199,7 +199,7 @@ async function main() {
     process.exit(1)
   }
 
-  const ingestUrl = `${supabaseUrl.replace(/\\/$/, '')}/functions/v1/ingest-events`
+  const ingestUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/ingest-events`
 
   const birdCmd = process.env.BIRD_CMD || 'bird'
   const n = Number(process.env.BIRD_LIMIT || '60')
@@ -281,4 +281,3 @@ async function main() {
 }
 
 await main()
-

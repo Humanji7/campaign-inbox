@@ -118,7 +118,7 @@ async function upsertUnifiedEvents(rows: any[]): Promise<{ ok: true; count: numb
 
   if (!rows.length) return { ok: true, count: 0 }
 
-  const url = `${supabaseUrl.replace(/\\/$/, '')}/rest/v1/unified_events?on_conflict=user_id,dedupe_key`
+  const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/unified_events?on_conflict=user_id,dedupe_key`
   const res = await fetch(url, {
     method: 'POST',
     headers: {
