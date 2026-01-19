@@ -32,6 +32,11 @@ It will:
 - create `.tg-user-watch.json` (if missing)
 - print top dialogs with chat ids
 
+If you want to re-print dialogs later without re-auth:
+```bash
+npm run tg:user:dialogs
+```
+
 ## 3) Choose chats to monitor
 
 Edit `.tg-user-watch.json`:
