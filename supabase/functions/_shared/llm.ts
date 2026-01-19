@@ -6,7 +6,7 @@ export type LlmConfig = {
   maxTokens: number
   temperature?: number
   timeoutMs: number
-  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high'
 }
 
 export function getLlmConfig(): LlmConfig | null {
@@ -29,7 +29,10 @@ export function getLlmConfig(): LlmConfig | null {
   const timeoutMs = Number.isFinite(timeoutMsParsed) && timeoutMsParsed > 0 ? Math.floor(timeoutMsParsed) : 20000
 
   const effortRaw = (Deno.env.get('LLM_REASONING_EFFORT') ?? '').toLowerCase().trim()
-  const envEffort = isReasoningEffort(effortRaw) ? effortRaw : undefined
+  // Back-compat: older configs may set "none"/"xhigh". OpenAI GPT-5 rejects them (supported:
+  // minimal|low|medium|high). Treat them as unset.
+  const envEffort =
+    effortRaw === 'none' || effortRaw === 'xhigh' ? undefined : isReasoningEffort(effortRaw) ? effortRaw : undefined
   const reasoningEffort = envEffort ?? (factsModel.toLowerCase().startsWith('gpt-5') ? 'minimal' : undefined)
 
   return { apiKey, baseUrl, factsModel, renderModel, maxTokens, temperature, timeoutMs, reasoningEffort }
@@ -159,12 +162,7 @@ function getReasoningEffortForModel(
   if (!effort) return undefined
 
   const m = (model ?? '').toLowerCase()
-  // OpenAI GPT‑5 currently rejects "none" and "xhigh" (supported: minimal|low|medium|high).
-  if (m.startsWith('gpt-5')) {
-    if (effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high') return effort
-    return 'minimal'
-  }
-
+  if (m.startsWith('gpt-5')) return effort
   return effort
 }
 
@@ -181,7 +179,7 @@ function supportsOpenAiJsonMode(baseUrl: string): boolean {
 }
 
 function isReasoningEffort(v: string): v is LlmConfig['reasoningEffort'] {
-  return v === 'none' || v === 'minimal' || v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh'
+  return v === 'minimal' || v === 'low' || v === 'medium' || v === 'high'
 }
 
 function parseJsonFromText(text: string): unknown {

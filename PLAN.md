@@ -1,5 +1,10 @@
 # Campaign Inbox MVP — Implementation Plan
 
+> Status note (2026-01-19): “cards from commits → tweet drafts” remains a useful prototype,
+> but the product direction is pivoting toward **Brand Ops Cockpit**: a pro control plane for
+> monitoring multiple platforms and turning signals into actionable opportunities (pull-mode).
+> See `docs/plans/2026-01-19-brand-ops-cockpit-design.md`.
+
 ## Defaults
 
 | Область | Решение |
@@ -116,3 +121,13 @@ src/
 3. Swipe → Ship flow
 4. Copy + Open X
 5. Paste URL → card in History
+
+---
+
+## Post-MVP Pivot: Brand Ops Cockpit (Draft)
+
+High-level guardrails for the next milestone:
+- No autoposting/scheduling in MVP; only deep links.
+- Pull-mode cockpit.
+- Target list cap: ≤ 20.
+- Active hours: 08:00–22:00 US/Eastern; ingest every 5–10 minutes.

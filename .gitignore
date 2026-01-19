@@ -14,3 +14,6 @@ dist/
 # Supabase
 supabase/.branches/
 supabase/.temp/
+
+# Local tooling
+sqlite_mcp_server.db
