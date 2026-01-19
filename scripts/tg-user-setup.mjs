@@ -76,23 +76,32 @@ async function main() {
 
   // Create a watch config file if missing.
   const watchPath = join(cwd, '.tg-user-watch.json')
+  const defaultWatch = {
+    watchChatIds: [],
+    triggers: { includeLinks: true, includeQuestions: true, includeTopics: true, includePeople: true, includeAll: false },
+    maxPerChat: 40,
+    // Safety default: store only short snippets in Supabase (you can increase if needed).
+    maxTextLen: 600
+  }
   if (!existsSync(watchPath)) {
-    writeFileSync(
-      watchPath,
-      JSON.stringify(
-        {
-          watchChatIds: [],
-          triggers: { includeLinks: true, includeQuestions: true, includeAll: false },
-          maxPerChat: 40,
-          // Safety default: store only short snippets in Supabase (you can increase if needed).
-          maxTextLen: 600
-        },
-        null,
-        2
-      ),
-      'utf8'
-    )
+    writeFileSync(watchPath, JSON.stringify(defaultWatch, null, 2), 'utf8')
     console.log('[tg-user-setup] wrote .tg-user-watch.json (add chat ids you want to monitor)')
+  } else {
+    try {
+      const existing = JSON.parse(readFileSync(watchPath, 'utf8'))
+      const merged = {
+        ...defaultWatch,
+        ...existing,
+        triggers: { ...defaultWatch.triggers, ...(existing?.triggers ?? {}) }
+      }
+      const changed = JSON.stringify(existing) !== JSON.stringify(merged)
+      if (changed) {
+        writeFileSync(watchPath, JSON.stringify(merged, null, 2), 'utf8')
+        console.log('[tg-user-setup] updated .tg-user-watch.json with new defaults (kept your watchChatIds)')
+      }
+    } catch {
+      // leave it as-is if corrupted; user can fix manually.
+    }
   }
 
   console.log('\n[tg-user-setup] dialogs (top 30):')

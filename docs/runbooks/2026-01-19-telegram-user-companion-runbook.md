@@ -42,7 +42,7 @@ npm run tg:user:dialogs
 Edit `.tg-user-watch.json`:
 
 - `watchChatIds`: array of numeric ids printed by setup
-- `triggers`: filters (default includes links + questions)
+- `triggers`: filters (defaults include links + questions + topics + people)
 - `maxPerChat`: how many recent messages to scan per chat
 - `maxTextLen`: snippet length stored in Supabase (default: 600)
 
@@ -56,7 +56,16 @@ It writes offsets to `.tg-user-offset.json` (gitignored) to avoid re-ingesting o
 
 ## 5) What gets ingested
 
-By default (KISS MVP): messages that are **questions** or **contain links**, per watched chat.
+By default (KISS MVP): messages that match any enabled trigger:
+- **questions** (good “reply now” opportunities)
+- **links** (often “topic/tool” opportunities — noisy in promo-heavy chats)
+- **topics** (long first-person experience that can become a channel post)
+- **people** (thoughtful messages from active participants — “interesting person” candidates)
+
+Each ingested message gets a lightweight classifier:
+- `payload.intent`: `reply | topic | person`
+- `payload.intentReason`: heuristic reason (for debugging)
+
 We store **snippets**, not full chat logs, to reduce privacy risk.
 
 ## 6) Troubleshooting

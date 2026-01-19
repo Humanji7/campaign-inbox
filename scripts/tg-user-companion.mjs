@@ -5,6 +5,8 @@ import process from 'node:process'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 
+import { classifyTelegramOpportunity } from './_shared/tg-intent.mjs'
+
 function readTextIfExists(path) {
   if (!existsSync(path)) return null
   return readFileSync(path, 'utf8')
@@ -41,23 +43,6 @@ function clampText(s, max) {
 function hasLink(text) {
   const t = String(text ?? '')
   return /https?:\/\/\S+/i.test(t)
-}
-
-function looksLikeQuestion(text) {
-  const t = String(text ?? '').toLowerCase()
-  if (!t) return false
-  if (t.includes('?')) return true
-  // RU/EN weak heuristics for MVP.
-  return (
-    t.includes('кто ') ||
-    t.includes('как ') ||
-    t.includes('почему ') ||
-    t.includes('зачем ') ||
-    t.includes('help') ||
-    t.includes('how ') ||
-    t.includes('anyone ') ||
-    t.includes('recommend')
-  )
 }
 
 function readJson(path, fallback) {
@@ -139,7 +124,13 @@ async function main() {
     process.exit(1)
   }
 
-  const triggers = watch.triggers || { includeLinks: true, includeQuestions: true, includeAll: false }
+  const triggers = watch.triggers || {
+    includeLinks: true,
+    includeQuestions: true,
+    includeTopics: true,
+    includePeople: true,
+    includeAll: false
+  }
   const maxPerChat = Math.max(5, Math.min(200, Number(watch.maxPerChat ?? 40)))
   const maxTextLen = Math.max(120, Math.min(4000, Number(watch.maxTextLen ?? 600)))
 
@@ -160,6 +151,18 @@ async function main() {
     const entity = await client.getEntity(chatId)
     const messages = await client.getMessages(entity, { limit: maxPerChat })
 
+    const senderCounts = new Map()
+    const senderLongCounts = new Map()
+    for (const m of messages) {
+      const senderId = String(m?.senderId ?? m?.sender?.id ?? '')
+      if (!senderId) continue
+      senderCounts.set(senderId, (senderCounts.get(senderId) ?? 0) + 1)
+      const msgText = clampText(m?.message ?? '', maxTextLen)
+      if (msgText && msgText.length >= 140 && !hasLink(msgText)) {
+        senderLongCounts.set(senderId, (senderLongCounts.get(senderId) ?? 0) + 1)
+      }
+    }
+
     let maxSeen = lastMsgId
     for (const m of messages) {
       const msgId = Number(m?.id ?? 0)
@@ -169,11 +172,16 @@ async function main() {
       const text = clampText(m?.message ?? '', maxTextLen)
       if (!text) continue
 
-      const include =
-        triggers.includeAll === true ||
-        (triggers.includeLinks !== false && hasLink(text)) ||
-        (triggers.includeQuestions !== false && looksLikeQuestion(text))
-      if (!include) continue
+      const senderId = String(m?.senderId ?? m?.sender?.id ?? '')
+      const cls = classifyTelegramOpportunity({
+        text,
+        triggers,
+        stats: {
+          senderMessageCount: Number(senderCounts.get(senderId) ?? 0),
+          senderLongMessageCount: Number(senderLongCounts.get(senderId) ?? 0)
+        }
+      })
+      if (!cls.include) continue
 
       const occurredAt = m?.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString()
 
@@ -197,8 +205,9 @@ async function main() {
           chatId,
           chatUsername: targetHandle,
           chatTitle: entity?.title ?? null,
+          intent: cls.intent,
+          intentReason: cls.reason,
           hasLink: hasLink(text),
-          isQuestion: looksLikeQuestion(text),
           replyToMsgId: m?.replyTo?.replyToMsgId ?? null
         }
       })

@@ -3,7 +3,7 @@ import type { OpportunityState, UnifiedEvent } from './supabaseCockpit'
 export type Opportunity = {
   dedupeKey: string
   source: 'x' | 'telegram'
-  kind: 'mention' | 'target_post' | 'link_drop'
+  kind: 'mention' | 'target_post' | 'tg_reply' | 'tg_topic' | 'tg_person'
   actorHandle: string | null
   targetHandle: string | null
   occurredAt: string
@@ -64,6 +64,20 @@ function isTgMessage(e: UnifiedEvent): boolean {
   return isTelegram(e) && e.type === 'message'
 }
 
+function telegramIntent(e: UnifiedEvent): 'reply' | 'topic' | 'person' {
+  const p = e.payload
+  const v = p && typeof p === 'object' ? String((p as any).intent ?? '') : ''
+  if (v === 'topic' || v === 'person' || v === 'reply') return v
+  return 'reply'
+}
+
+function telegramKind(e: UnifiedEvent): Opportunity['kind'] {
+  const it = telegramIntent(e)
+  if (it === 'topic') return 'tg_topic'
+  if (it === 'person') return 'tg_person'
+  return 'tg_reply'
+}
+
 function makeDedupeKey(e: UnifiedEvent): string {
   // For MVP we use a deterministic key stable across refreshes.
   const actor = (e.actor_handle ?? '').toLowerCase().trim()
@@ -86,7 +100,12 @@ function gotReplyFromState(s: OpportunityState | undefined): boolean {
 function whyLine(e: UnifiedEvent): string {
   if (isMention(e)) return 'They mentioned you — reply fast.'
   if (e.type === 'reply') return 'They’re already in a thread — easy to join.'
-  if (isTgMessage(e)) return 'Telegram activity — respond where the thread is live.'
+  if (isTgMessage(e)) {
+    const it = telegramIntent(e)
+    if (it === 'topic') return 'Good topic — turn it into a channel post.'
+    if (it === 'person') return 'Interesting person — engage publicly to start a connection.'
+    return 'Telegram thread — reply publicly while it’s hot.'
+  }
   const m = getMetrics(e)
   if (m.reply >= 2) return 'Has replies — conversation is forming.'
   if (m.like >= 5) return 'Getting attention — good time to engage.'
@@ -115,7 +134,7 @@ export function buildOpportunities(input: {
     const st = byKey.get(dedupeKey)
     const state = (st?.status ?? 'new') as OpportunityState['status']
 
-    const base = isMention(e) ? 90 : isTgMessage(e) ? 70 : 55
+    const base = isMention(e) ? 90 : isTgMessage(e) ? (telegramIntent(e) === 'topic' ? 60 : telegramIntent(e) === 'person' ? 78 : 70) : 55
     const score = Math.round(
       base +
         recencyScore(e.occurred_at) +
@@ -125,7 +144,7 @@ export function buildOpportunities(input: {
     candidates.push({
       dedupeKey,
       source: isTelegram(e) ? 'telegram' : 'x',
-      kind: isMention(e) ? 'mention' : isTgMessage(e) ? 'link_drop' : 'target_post',
+      kind: isMention(e) ? 'mention' : isTgMessage(e) ? telegramKind(e) : 'target_post',
       actorHandle: e.actor_handle,
       targetHandle: e.target_handle ?? null,
       occurredAt: e.occurred_at,

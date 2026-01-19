@@ -103,6 +103,7 @@ export default function CockpitPage() {
   const [includeMentions, setIncludeMentions] = useState(true)
   const [queueOnly, setQueueOnly] = useState(true)
   const [ageHours, setAgeHours] = useState<6 | 24 | 72>(24)
+  const [lane, setLane] = useState<'reply' | 'topics' | 'people' | 'all'>('reply')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
 
@@ -160,6 +161,14 @@ export default function CockpitPage() {
   const opportunities = useMemo(() => {
     let list = opportunitiesAll
     if (!includeMentions) list = list.filter(o => o.kind !== 'mention')
+    if (lane !== 'all') {
+      list = list.filter(o => {
+        if (lane === 'topics') return o.kind === 'tg_topic'
+        if (lane === 'people') return o.kind === 'tg_person'
+        // reply lane: X work + TG reply-like items.
+        return o.kind !== 'tg_topic' && o.kind !== 'tg_person'
+      })
+    }
     if (queueOnly) {
       list = list.filter(o => {
         const st = stageFor(o.dedupeKey, o.state)
@@ -167,7 +176,7 @@ export default function CockpitPage() {
       })
     }
     return list.slice(0, 12)
-  }, [opportunitiesAll, includeMentions, queueOnly, stageFor])
+  }, [opportunitiesAll, includeMentions, lane, queueOnly, stageFor])
 
   const weekStart = useMemo(() => weekStartIsoUtc(), [])
   const repliesThisWeek = useMemo(() => {
@@ -392,6 +401,20 @@ export default function CockpitPage() {
                 </select>
               </div>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <SmallButton onClick={() => setLane('reply')} tone={lane === 'reply' ? 'primary' : 'neutral'}>
+                Reply
+              </SmallButton>
+              <SmallButton onClick={() => setLane('topics')} tone={lane === 'topics' ? 'primary' : 'neutral'}>
+                Topics
+              </SmallButton>
+              <SmallButton onClick={() => setLane('people')} tone={lane === 'people' ? 'primary' : 'neutral'}>
+                People
+              </SmallButton>
+              <SmallButton onClick={() => setLane('all')} tone={lane === 'all' ? 'primary' : 'neutral'}>
+                All
+              </SmallButton>
+            </div>
             <div className="mt-2 text-[11px] text-zinc-500 md:block">
               Shortcuts: <span className="text-zinc-300">j/k</span> move · <span className="text-zinc-300">Enter</span>{' '}
               open · <span className="text-zinc-300">d</span> done · <span className="text-zinc-300">i</span> ignore
@@ -405,7 +428,9 @@ export default function CockpitPage() {
             </div>
             {opportunities.length === 0 ? (
               <div className="p-3 text-sm text-zinc-400">
-                No opportunities. Run: <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code>
+                No opportunities. Run:{' '}
+                <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code> or{' '}
+                <code className="text-zinc-200">FORCE=1 npm run tg:user:once</code>
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-auto overscroll-contain">
@@ -441,7 +466,9 @@ export default function CockpitPage() {
                             <span>{fmtTime(o.occurredAt)}</span>
                             <Pill>score {o.score}</Pill>
                             {o.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
-                            {o.kind === 'link_drop' ? <Pill tone="warn">tg msg</Pill> : null}
+                            {o.kind === 'tg_reply' ? <Pill tone="warn">tg reply</Pill> : null}
+                            {o.kind === 'tg_topic' ? <Pill tone="warn">tg topic</Pill> : null}
+                            {o.kind === 'tg_person' ? <Pill tone="warn">tg person</Pill> : null}
                             {stage !== 'new' ? <Pill>{stage}</Pill> : null}
                             {o.gotReply ? <Pill tone="good">got reply</Pill> : null}
                           </div>
@@ -599,7 +626,9 @@ function OpportunityDetail({
             <span>{fmtTime(opportunity.occurredAt)}</span>
             <Pill>score {opportunity.score}</Pill>
             {opportunity.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
-            {opportunity.kind === 'link_drop' ? <Pill tone="warn">link-drop</Pill> : null}
+            {opportunity.kind === 'tg_reply' ? <Pill tone="warn">tg reply</Pill> : null}
+            {opportunity.kind === 'tg_topic' ? <Pill tone="warn">tg topic</Pill> : null}
+            {opportunity.kind === 'tg_person' ? <Pill tone="warn">tg person</Pill> : null}
             <Pill>{opportunity.source === 'telegram' ? 'TG' : 'X'}</Pill>
             {opportunity.state !== 'new' ? <Pill>{opportunity.state}</Pill> : null}
             {opportunity.gotReply ? <Pill tone="good">got reply</Pill> : null}
