@@ -3,7 +3,18 @@ import type { ReactNode } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
 import { buildOpportunities, type Opportunity, weekStartIsoUtc } from './opportunities'
-import { listOpportunityStates, listUnifiedEvents, setOpportunityState, type OpportunityState, type UnifiedEvent } from './supabaseCockpit'
+import {
+  listOpportunityStates,
+  listUnifiedEvents,
+  listWorkItems,
+  markWorkItemCopied,
+  markWorkItemOpened,
+  setOpportunityState,
+  upsertWorkItem,
+  type OpportunityState,
+  type UnifiedEvent,
+  type WorkItem
+} from './supabaseCockpit'
 
 function fmtTime(iso: string): string {
   const d = new Date(iso)
@@ -102,7 +113,8 @@ export default function CockpitPage() {
         listUnifiedEvents(sb!, { limit: 200 }),
         listOpportunityStates(sb!, { limit: 600 })
       ])
-      return { events, states }
+      const workItems = await listWorkItems(sb!, { limit: 600 })
+      return { events, states, workItems }
     },
     { revalidateOnFocus: false }
   )
@@ -120,6 +132,7 @@ export default function CockpitPage() {
 
   const events = data?.events ?? []
   const states = data?.states ?? []
+  const workItems = data?.workItems ?? []
   const lastSync = events[0]?.occurred_at ?? null
 
   const opportunitiesAll = useMemo(() => buildOpportunities({ events, states, maxAgeHours: ageHours, max: 30 }), [events, states, ageHours])
@@ -154,6 +167,12 @@ export default function CockpitPage() {
     if (!key) return opportunities[0] ?? null
     return opportunitiesAll.find(o => o.dedupeKey === key) ?? opportunities[0] ?? null
   }, [selectedKey, opportunities, opportunitiesAll])
+
+  const workByKey = useMemo(() => {
+    const map = new Map<string, WorkItem>()
+    for (const w of workItems) map.set(w.dedupe_key, w)
+    return map
+  }, [workItems])
 
   useEffect(() => {
     if (!selected) return
@@ -218,6 +237,42 @@ export default function CockpitPage() {
     if (!selected) return
     void applyState(selected.dedupeKey, selected.state, { got_reply: !selected.gotReply })
   }, [applyState, selected])
+
+  const selectedWork = useMemo(() => (selected ? workByKey.get(selected.dedupeKey) ?? null : null), [selected, workByKey])
+
+  const saveDraft = useCallback(
+    async (draft: string) => {
+      if (!selected) return
+      await upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, draft, stage: draft.trim() ? 'ready' : 'drafting' })
+      await mutate()
+    },
+    [sb, mutate, selected]
+  )
+
+  const markOpened = useCallback(async () => {
+    if (!selected) return
+    await markWorkItemOpened(sb, selected.dedupeKey)
+    await mutate()
+  }, [sb, mutate, selected])
+
+  const copyDraft = useCallback(
+    async (draft: string) => {
+      const text = draft.trim()
+      if (!text) return
+      await navigator.clipboard.writeText(text)
+      if (selected) {
+        await markWorkItemCopied(sb, selected.dedupeKey)
+        await mutate()
+      }
+    },
+    [sb, mutate, selected]
+  )
+
+  const openLink = useCallback(() => {
+    if (!selected?.url) return
+    window.open(selected.url, '_blank', 'noopener,noreferrer')
+    void markOpened()
+  }, [markOpened, selected])
 
   const actionIgnore = useCallback(() => {
     if (!selected) return
@@ -324,6 +379,7 @@ export default function CockpitPage() {
               <div className="max-h-[60vh] overflow-auto overscroll-contain">
                 {opportunities.map(o => {
                   const active = selected?.dedupeKey === o.dedupeKey
+                  const src = o.source === 'telegram' ? 'TG' : 'X'
                   return (
                     <button
                       key={o.dedupeKey}
@@ -338,11 +394,13 @@ export default function CockpitPage() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                            <Pill>{src}</Pill>
                             <span className="font-medium text-zinc-200">@{o.actorHandle ?? 'unknown'}</span>
                             <span>·</span>
                             <span>{fmtTime(o.occurredAt)}</span>
                             <Pill>score {o.score}</Pill>
                             {o.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
+                            {o.kind === 'link_drop' ? <Pill tone="warn">link-drop</Pill> : null}
                             {o.state !== 'new' ? <Pill>{o.state}</Pill> : null}
                             {o.gotReply ? <Pill tone="good">got reply</Pill> : null}
                           </div>
@@ -364,6 +422,10 @@ export default function CockpitPage() {
           ) : (
             <OpportunityDetail
               opportunity={selected}
+              workItem={selectedWork}
+              onCopyDraft={copyDraft}
+              onOpen={openLink}
+              onSaveDraft={saveDraft}
               onCloseMobile={() => setMobileDetailOpen(false)}
               onDone={actionDone}
               onIgnore={actionIgnore}
@@ -440,6 +502,10 @@ export default function CockpitPage() {
           <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-zinc-800 bg-zinc-950 p-4">
             <OpportunityDetail
               opportunity={selected}
+              workItem={selectedWork}
+              onCopyDraft={copyDraft}
+              onOpen={openLink}
+              onSaveDraft={saveDraft}
               onCloseMobile={() => setMobileDetailOpen(false)}
               onDone={actionDone}
               onIgnore={actionIgnore}
@@ -454,17 +520,31 @@ export default function CockpitPage() {
 
 function OpportunityDetail({
   opportunity,
+  workItem,
   onDone,
   onIgnore,
   onToggleGotReply,
-  onCloseMobile
+  onCloseMobile,
+  onSaveDraft,
+  onCopyDraft,
+  onOpen
 }: {
   opportunity: Opportunity
+  workItem: WorkItem | null
   onDone: () => void
   onIgnore: () => void
   onToggleGotReply: () => void
   onCloseMobile: () => void
+  onSaveDraft: (draft: string) => void
+  onCopyDraft: (draft: string) => void
+  onOpen: () => void
 }) {
+  const [draft, setDraft] = useState<string>(workItem?.draft ?? '')
+
+  useEffect(() => {
+    setDraft(workItem?.draft ?? '')
+  }, [workItem?.draft])
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -475,6 +555,8 @@ function OpportunityDetail({
             <span>{fmtTime(opportunity.occurredAt)}</span>
             <Pill>score {opportunity.score}</Pill>
             {opportunity.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
+            {opportunity.kind === 'link_drop' ? <Pill tone="warn">link-drop</Pill> : null}
+            <Pill>{opportunity.source === 'telegram' ? 'TG' : 'X'}</Pill>
             {opportunity.state !== 'new' ? <Pill>{opportunity.state}</Pill> : null}
             {opportunity.gotReply ? <Pill tone="good">got reply</Pill> : null}
           </div>
@@ -490,8 +572,32 @@ function OpportunityDetail({
         <div className="mt-2 text-xs text-zinc-500">{opportunity.why}</div>
       </div>
 
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] font-medium text-zinc-400">Draft</div>
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+            {workItem?.last_copied_at ? `copied ${fmtTime(workItem.last_copied_at)}` : null}
+          </div>
+        </div>
+        <textarea
+          className={[
+            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
+            focusRing
+          ].join(' ')}
+          placeholder="Write a quick reply draft here (or paste from your bot)."
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <SmallButton onClick={() => onSaveDraft(draft)} tone="primary">
+            Save
+          </SmallButton>
+          <SmallButton onClick={() => void onCopyDraft(draft)}>Copy</SmallButton>
+          {opportunity.url ? <SmallButton onClick={onOpen}>Open</SmallButton> : null}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
-        {opportunity.url ? <LinkButton href={opportunity.url}>Open</LinkButton> : null}
         <SmallButton onClick={onDone} tone="primary">
           Done
         </SmallButton>

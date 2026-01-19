@@ -17,3 +17,6 @@ supabase/.temp/
 
 # Local tooling
 sqlite_mcp_server.db
+
+# Local companion state
+.tg-companion-offset.json

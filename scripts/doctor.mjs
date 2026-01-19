@@ -71,6 +71,12 @@ else warn('Local .env missing X_LIST_ID_OR_URL', 'Needed only for local X compan
 if (localEnv.get('INGEST_SECRET')) ok('Local .env has INGEST_SECRET (optional)')
 else warn('Local .env missing INGEST_SECRET', 'Needed only for local X companion')
 
+if (localEnv.get('TELEGRAM_BOT_TOKEN')) ok('Local .env has TELEGRAM_BOT_TOKEN (optional)')
+else warn('Local .env missing TELEGRAM_BOT_TOKEN', 'Needed only for Telegram companion (link-drop inbox)')
+
+if (localEnv.get('TELEGRAM_CHAT_ID')) ok('Local .env has TELEGRAM_CHAT_ID (optional)')
+else warn('Local .env missing TELEGRAM_CHAT_ID', 'Needed only for Telegram companion (restrict updates)')
+
 // Layer 2: Supabase CLI + project linkage
 const cli = run('supabase', ['--version'])
 if (!cli.ok) {

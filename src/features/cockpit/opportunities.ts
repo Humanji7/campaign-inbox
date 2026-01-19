@@ -2,7 +2,8 @@ import type { OpportunityState, UnifiedEvent } from './supabaseCockpit'
 
 export type Opportunity = {
   dedupeKey: string
-  kind: 'mention' | 'target_post'
+  source: 'x' | 'telegram'
+  kind: 'mention' | 'target_post' | 'link_drop'
   actorHandle: string | null
   occurredAt: string
   url: string | null
@@ -46,12 +47,20 @@ function isX(e: UnifiedEvent): boolean {
   return e.source === 'x'
 }
 
+function isTelegram(e: UnifiedEvent): boolean {
+  return e.source === 'telegram'
+}
+
 function isMention(e: UnifiedEvent): boolean {
   return isX(e) && e.type === 'mention'
 }
 
 function isTargetPost(e: UnifiedEvent): boolean {
   return isX(e) && (e.type === 'tweet' || e.type === 'reply')
+}
+
+function isTgInbox(e: UnifiedEvent): boolean {
+  return isTelegram(e) && e.type === 'inbox'
 }
 
 function makeDedupeKey(e: UnifiedEvent): string {
@@ -76,6 +85,7 @@ function gotReplyFromState(s: OpportunityState | undefined): boolean {
 function whyLine(e: UnifiedEvent): string {
   if (isMention(e)) return 'They mentioned you — reply fast.'
   if (e.type === 'reply') return 'They’re already in a thread — easy to join.'
+  if (isTgInbox(e)) return 'Telegram link-drop — treat as curated input.'
   const m = getMetrics(e)
   if (m.reply >= 2) return 'Has replies — conversation is forming.'
   if (m.like >= 5) return 'Getting attention — good time to engage.'
@@ -96,7 +106,7 @@ export function buildOpportunities(input: {
   const candidates: Opportunity[] = []
 
   for (const e of input.events) {
-    if (!isMention(e) && !isTargetPost(e)) continue
+    if (!isMention(e) && !isTargetPost(e) && !isTgInbox(e)) continue
     const t = Date.parse(e.occurred_at)
     if (!Number.isFinite(t) || t < cutoff) continue
 
@@ -104,12 +114,17 @@ export function buildOpportunities(input: {
     const st = byKey.get(dedupeKey)
     const state = (st?.status ?? 'new') as OpportunityState['status']
 
-    const base = isMention(e) ? 90 : 55
-    const score = Math.round(base + recencyScore(e.occurred_at) + (isMention(e) ? 0 : engagementScore(e)))
+    const base = isMention(e) ? 90 : isTgInbox(e) ? 65 : 55
+    const score = Math.round(
+      base +
+        recencyScore(e.occurred_at) +
+        (isMention(e) ? 0 : isTgInbox(e) ? (e.url ? 10 : 0) : engagementScore(e))
+    )
 
     candidates.push({
       dedupeKey,
-      kind: isMention(e) ? 'mention' : 'target_post',
+      source: isTelegram(e) ? 'telegram' : 'x',
+      kind: isMention(e) ? 'mention' : isTgInbox(e) ? 'link_drop' : 'target_post',
       actorHandle: e.actor_handle,
       occurredAt: e.occurred_at,
       url: e.url,
@@ -121,16 +136,21 @@ export function buildOpportunities(input: {
     })
   }
 
-  // Dedupe: keep best per actor to avoid flooding (≤20 targets).
+  // Dedupe: keep best per actor for X targets, but keep TG link-drops as separate items.
   const bestByActor = new Map<string, Opportunity>()
+  const telegram = [] as Opportunity[]
   for (const o of candidates) {
+    if (o.source === 'telegram') {
+      telegram.push(o)
+      continue
+    }
     const k = (o.actorHandle ?? '').trim().toLowerCase()
     if (!k) continue
     const prev = bestByActor.get(k)
     if (!prev || o.score > prev.score) bestByActor.set(k, o)
   }
 
-  return Array.from(bestByActor.values())
+  return [...Array.from(bestByActor.values()), ...telegram]
     .sort((a, b) => b.score - a.score)
     .slice(0, max)
 }
