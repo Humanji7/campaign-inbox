@@ -9,7 +9,7 @@ This is **MVP**: local companion runs on your machine and pushes normalized even
 - You created an X List with your targets (≤ 20).
 - You installed Bird and authenticated it via cookies.
 
-Bird docs: `bird list-timeline <listIdOrUrl> --json` and `bird mentions --json`. citeturn3view1
+Bird docs: `bird list-timeline <listIdOrUrl> --json` and `bird mentions --json`.
 Bird docs:
 ```text
 https://bird.fast
