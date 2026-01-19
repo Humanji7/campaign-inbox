@@ -83,7 +83,9 @@ async function main() {
         {
           watchChatIds: [],
           triggers: { includeLinks: true, includeQuestions: true, includeAll: false },
-          maxPerChat: 40
+          maxPerChat: 40,
+          // Safety default: store only short snippets in Supabase (you can increase if needed).
+          maxTextLen: 600
         },
         null,
         2
@@ -122,4 +124,3 @@ async function main() {
 }
 
 await main()
-

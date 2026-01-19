@@ -39,6 +39,7 @@ Edit `.tg-user-watch.json`:
 - `watchChatIds`: array of numeric ids printed by setup
 - `triggers`: filters (default includes links + questions)
 - `maxPerChat`: how many recent messages to scan per chat
+- `maxTextLen`: snippet length stored in Supabase (default: 600)
 
 ## 4) Run once
 
@@ -51,10 +52,10 @@ It writes offsets to `.tg-user-offset.json` (gitignored) to avoid re-ingesting o
 ## 5) What gets ingested
 
 By default (KISS MVP): messages that are **questions** or **contain links**, per watched chat.
+We store **snippets**, not full chat logs, to reduce privacy risk.
 
 ## 6) Troubleshooting
 
 - “missing .tg-user.session” → run `npm run tg:user:setup`
 - “no matching messages” → set `triggers.includeAll=true` temporarily
 - “ingest 401” → mismatch `INGEST_SECRET` local vs Supabase secret
-

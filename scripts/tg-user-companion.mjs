@@ -31,10 +31,11 @@ function getEnv(key, fallbackMap) {
   return process.env[key] || (fallbackMap ? fallbackMap.get(key) : undefined) || ''
 }
 
-function clampText(s, max = 4000) {
+function clampText(s, max) {
   const t = String(s ?? '').trim()
   if (!t) return null
-  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`
+  const limit = Number.isFinite(Number(max)) ? Math.max(120, Math.min(4000, Math.floor(Number(max)))) : 600
+  return t.length <= limit ? t : `${t.slice(0, limit - 1).trimEnd()}…`
 }
 
 function hasLink(text) {
@@ -140,6 +141,7 @@ async function main() {
 
   const triggers = watch.triggers || { includeLinks: true, includeQuestions: true, includeAll: false }
   const maxPerChat = Math.max(5, Math.min(200, Number(watch.maxPerChat ?? 40)))
+  const maxTextLen = Math.max(120, Math.min(4000, Number(watch.maxTextLen ?? 600)))
 
   const offsetsPath = join(cwd, '.tg-user-offset.json')
   const offsets = readJson(offsetsPath, { chats: {} })
@@ -164,7 +166,7 @@ async function main() {
       if (!Number.isFinite(msgId) || msgId <= lastMsgId) continue
       if (msgId > maxSeen) maxSeen = msgId
 
-      const text = clampText(m?.message ?? '')
+      const text = clampText(m?.message ?? '', maxTextLen)
       if (!text) continue
 
       const include =
@@ -230,4 +232,3 @@ async function main() {
 }
 
 await main()
-
