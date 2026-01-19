@@ -65,6 +65,12 @@ else fail('Local .env missing VITE_SUPABASE_ANON_KEY', 'Copy `.env.example` → 
 if (localEnv.get('SUPABASE_DB_PASSWORD')) ok('Local .env has SUPABASE_DB_PASSWORD (optional)')
 else warn('Local .env missing SUPABASE_DB_PASSWORD', 'Only needed for direct DB connections')
 
+if (localEnv.get('X_LIST_ID_OR_URL')) ok('Local .env has X_LIST_ID_OR_URL (optional)')
+else warn('Local .env missing X_LIST_ID_OR_URL', 'Needed only for local X companion')
+
+if (localEnv.get('INGEST_SECRET')) ok('Local .env has INGEST_SECRET (optional)')
+else warn('Local .env missing INGEST_SECRET', 'Needed only for local X companion')
+
 // Layer 2: Supabase CLI + project linkage
 const cli = run('supabase', ['--version'])
 if (!cli.ok) {
@@ -102,11 +108,14 @@ const secretSet = new Set(secretNames)
 const requiredSecrets = [
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
   'LLM_API_KEY',
   'LLM_BASE_URL',
   'LLM_FACTS_MODEL',
   'LLM_RENDER_MODEL',
-  'LLM_MAX_TOKENS'
+  'LLM_MAX_TOKENS',
+  'INGEST_SECRET',
+  'INGEST_USER_ID'
 ]
 
 for (const name of requiredSecrets) {
@@ -126,6 +135,10 @@ try {
   const generate = Array.isArray(parsed) ? parsed.find(f => f?.slug === 'generate-cards') : null
   if (generate?.status === 'ACTIVE') ok('Edge Function active: generate-cards', `version=${generate.version ?? 'unknown'}`)
   else warn('Edge Function not active: generate-cards', 'Deploy: `supabase functions deploy generate-cards --project-ref <ref>`')
+
+  const ingest = Array.isArray(parsed) ? parsed.find(f => f?.slug === 'ingest-events') : null
+  if (ingest?.status === 'ACTIVE') ok('Edge Function active: ingest-events', `version=${ingest.version ?? 'unknown'}`)
+  else warn('Edge Function not active: ingest-events', 'Deploy: `supabase functions deploy ingest-events --project-ref <ref>`')
 } catch {
   warn('Could not parse functions list JSON', 'Check `supabase functions list --output pretty`')
 }
@@ -134,4 +147,3 @@ console.log('\nSmoke test (manual):')
 console.log('- Open `http://127.0.0.1:5173` → Packs → Preview commits → Generate cards.')
 console.log('- Expect: notice contains `Mode: llm` (not `fallback_no_llm`).')
 console.log('- If you see `401 unauthorized`, ensure function setting “Verify JWT with legacy secret” is OFF.')
-

@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "doctor": "node scripts/doctor.mjs",
     "deploy:generate-cards": "supabase functions deploy generate-cards --no-verify-jwt",
+    "deploy:ingest-events": "supabase functions deploy ingest-events --no-verify-jwt",
+    "x:companion:once": "node scripts/x-companion.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

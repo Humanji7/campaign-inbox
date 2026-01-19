@@ -1,18 +1,21 @@
 import { useMemo, useState } from 'react'
 import InboxPage from './features/inbox/InboxPage'
 import HistoryPage from './features/history/HistoryPage'
+import CockpitPage from './features/cockpit/CockpitPage'
 import PacksPage from './features/packs/PacksPage'
 import SettingsPage from './features/settings/SettingsPage'
 import useCardsHydration from './features/cards/useCardsHydration'
 
-type TabKey = 'inbox' | 'history' | 'packs' | 'settings'
+type TabKey = 'cockpit' | 'inbox' | 'history' | 'packs' | 'settings'
 
 export default function App() {
-  const [tab, setTab] = useState<TabKey>('packs')
+  const [tab, setTab] = useState<TabKey>('cockpit')
   useCardsHydration()
 
   const content = useMemo(() => {
     switch (tab) {
+      case 'cockpit':
+        return <CockpitPage />
       case 'inbox':
         return <InboxPage />
       case 'history':
@@ -37,7 +40,10 @@ export default function App() {
 function BottomTabs({ tab, onChange }: { tab: TabKey; onChange: (t: TabKey) => void }) {
   return (
     <div className="fixed inset-x-0 bottom-0 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-4 px-2 py-2 text-xs">
+      <div className="mx-auto grid max-w-md grid-cols-5 px-2 py-2 text-xs">
+        <TabButton active={tab === 'cockpit'} onClick={() => onChange('cockpit')}>
+          Cockpit
+        </TabButton>
         <TabButton active={tab === 'inbox'} onClick={() => onChange('inbox')}>
           Inbox
         </TabButton>
