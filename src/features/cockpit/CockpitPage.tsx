@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
@@ -81,6 +81,14 @@ const LS_INCLUDE_MENTIONS = 'cockpit.x.includeMentions.v1'
 const LS_AGE_HOURS = 'cockpit.x.ageHours.v1'
 const LS_DO_NOW = 'cockpit.x.doNow.v1'
 const LS_PALETTE = 'cockpit.x.palette.v1'
+const LS_TODAY_PLAN_DATE = 'cockpit.x.todayPlanDate.v1'
+
+function todayLocalYmd(now = new Date()): string {
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 
 function readPalette(): 'default' | 'warm' {
   const raw = getLocalStorageItem(LS_PALETTE)
@@ -168,12 +176,29 @@ export default function CockpitPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
+  const [draftFocusKey, setDraftFocusKey] = useState<string | null>(null)
 
   useEffect(() => {
     if (palette === 'warm') document.documentElement.dataset.theme = 'warm'
     else delete (document.documentElement as any).dataset.theme
     setLocalStorageItem(LS_PALETTE, palette)
   }, [palette])
+
+  useEffect(() => {
+    const today = todayLocalYmd()
+    const last = getLocalStorageItem(LS_TODAY_PLAN_DATE)
+    if (last === today) return
+
+    setLocalStorageItem(LS_TODAY_PLAN_DATE, today)
+    setDoNowSlots(curr => {
+      const slots = normalizeDoNowSlots(curr).map(s => ({ ...s }))
+      for (const s of slots) {
+        if (s.pinned) continue
+        s.dedupeKey = null
+      }
+      return slots
+    })
+  }, [])
 
   useEffect(() => {
     setLocalStorageItem(LS_INCLUDE_MENTIONS, includeMentions ? '1' : '0')
@@ -500,6 +525,28 @@ export default function CockpitPage() {
     [sb, mutate]
   )
 
+  const doneFor = useCallback(
+    (o: Opportunity) => {
+      if (!signedIn) return
+      void Promise.all([
+        applyState(o.dedupeKey, 'done', { got_reply: o.gotReply }),
+        upsertWorkItem(sb, { dedupeKey: o.dedupeKey, stage: 'done' })
+      ])
+    },
+    [applyState, sb, signedIn]
+  )
+
+  const ignoreFor = useCallback(
+    (o: Opportunity) => {
+      if (!signedIn) return
+      void Promise.all([
+        applyState(o.dedupeKey, 'ignored', { got_reply: o.gotReply }),
+        upsertWorkItem(sb, { dedupeKey: o.dedupeKey, stage: 'ignored' })
+      ])
+    },
+    [applyState, sb, signedIn]
+  )
+
   const copyDraftFor = useCallback(
     async (dedupeKey: string, draft: string) => {
       const text = draft.trim()
@@ -543,6 +590,25 @@ export default function CockpitPage() {
 
   const addToPlan = useCallback((dedupeKey: string) => {
     setDoNowSlots(curr => addToDoNow({ slots: curr, dedupeKey }))
+  }, [])
+
+  const regeneratePlan = useCallback(() => {
+    setDoNowSlots(curr => {
+      const next = normalizeDoNowSlots(curr).map(s => ({ ...s }))
+      for (const s of next) {
+        if (s.pinned) continue
+        s.dedupeKey = null
+      }
+      return next
+    })
+  }, [])
+
+  const clearPins = useCallback(() => {
+    setDoNowSlots(curr => {
+      const next = normalizeDoNowSlots(curr).map(s => ({ ...s }))
+      for (const s of next) s.pinned = false
+      return next
+    })
   }, [])
 
   const actionIgnore = useCallback(() => {
@@ -674,8 +740,24 @@ export default function CockpitPage() {
 
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] backdrop-blur">
             <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
-              <div className="text-xs font-semibold text-zinc-300">Do Now</div>
-              <div className="text-xs text-zinc-500">Top 3</div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-zinc-300">Today Plan</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">Auto-refreshes daily · Pin to keep</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
+                <span className="tabular-nums">
+                  {
+                    doNowPlan.items.filter(o => {
+                      if (!o) return false
+                      const st = stageFor(o.dedupeKey, o.state)
+                      return st === 'done' || st === 'ignored'
+                    }).length
+                  }
+                  /3 done
+                </span>
+                <SmallButton onClick={regeneratePlan}>Regenerate</SmallButton>
+                <SmallButton onClick={clearPins}>Clear Pins</SmallButton>
+              </div>
             </div>
             <div className="divide-y divide-zinc-900/60">
               {doNowPlan.items.map((o, idx) => {
@@ -683,16 +765,35 @@ export default function CockpitPage() {
                 const active = selected?.dedupeKey === o?.dedupeKey
                 const stage = o ? stageFor(o.dedupeKey, o.state) : 'new'
                 const draft = o ? (workByKey.get(o.dedupeKey)?.draft ?? '') : ''
-                const primary =
-                  o && draft.trim()
-                    ? o.url
-                      ? { label: 'Copy & Open', run: async () => { await copyDraftFor(o.dedupeKey, draft); openLinkFor(o) } }
-                      : { label: 'Copy', run: async () => { await copyDraftFor(o.dedupeKey, draft) } }
-                    : o && o.url
-                      ? { label: 'Open', run: async () => { openLinkFor(o) } }
-                      : o
-                        ? { label: 'Draft', run: () => openDetail(o.dedupeKey) }
-                        : null
+
+                const nextStep = (() => {
+                  if (!o) return null
+                  const hasDraft = Boolean(draft.trim())
+                  if (stage === 'ready' || hasDraft) {
+                    if (o.url) {
+                      return {
+                        label: 'Reply Now',
+                        hint: 'Copy & open thread',
+                        run: async () => {
+                          await copyDraftFor(o.dedupeKey, draft)
+                          openLinkFor(o)
+                        }
+                      }
+                    }
+                    return { label: 'Copy Reply', hint: 'Copy draft', run: async () => await copyDraftFor(o.dedupeKey, draft) }
+                  }
+                  if (o.url) {
+                    return { label: 'Open Thread', hint: 'Read context on X', run: async () => openLinkFor(o) }
+                  }
+                  return {
+                    label: 'Write Draft',
+                    hint: 'Start a reply',
+                    run: () => {
+                      setDraftFocusKey(o.dedupeKey)
+                      openDetail(o.dedupeKey)
+                    }
+                  }
+                })()
 
                 return (
                   <div
@@ -739,29 +840,36 @@ export default function CockpitPage() {
                       </div>
                     )}
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {primary ? (
-                        <SmallButton
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      {nextStep ? (
+                        <button
+                          className={[
+                            'flex-1 rounded-xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-4 py-3 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
+                            focusRing
+                          ].join(' ')}
                           onClick={() => {
                             if (!o) return
                             setSelectedKey(o.dedupeKey)
-                            void primary.run()
+                            void nextStep.run()
                           }}
-                          tone="primary"
+                          type="button"
                         >
-                          {primary.label}
-                        </SmallButton>
+                          <div className="flex items-center justify-between gap-3">
+                            <span>{nextStep.label}</span>
+                            <span className="text-xs font-medium text-[color:var(--muted)]">{nextStep.hint}</span>
+                          </div>
+                        </button>
                       ) : null}
                       {o ? (
-                        <>
-                          <SmallButton
-                            onClick={() => togglePinSlot(idx)}
-                          >
-                            {slot?.pinned ? 'Unpin' : 'Pin'}
-                          </SmallButton>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <SmallButton onClick={() => togglePinSlot(idx)}>{slot?.pinned ? 'Unpin' : 'Pin'}</SmallButton>
                           <SmallButton onClick={() => swapSlot(idx)}>Swap</SmallButton>
                           <SmallButton onClick={() => openDetail(o.dedupeKey)}>Details</SmallButton>
-                        </>
+                          <SmallButton onClick={() => doneFor(o)} tone="primary">
+                            Done
+                          </SmallButton>
+                          <SmallButton onClick={() => ignoreFor(o)}>Ignore</SmallButton>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -862,6 +970,8 @@ export default function CockpitPage() {
               opportunity={selected}
               workItem={selectedWork}
               showDebug={showDebug}
+              autoFocusDraft={draftFocusKey === selected.dedupeKey}
+              onDidAutofocusDraft={() => setDraftFocusKey(null)}
               onCopyDraft={copyDraft}
               onOpen={openLink}
               onSaveDraft={signedIn ? saveDraft : async () => {}}
@@ -938,11 +1048,13 @@ export default function CockpitPage() {
             onClick={() => setMobileDetailOpen(false)}
             type="button"
           />
-          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-[color:var(--border)] bg-[color:var(--surface)] p-4">
-            <OpportunityDetail
-              opportunity={selected}
-              workItem={selectedWork}
-              showDebug={showDebug}
+	          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+	            <OpportunityDetail
+	              opportunity={selected}
+	              workItem={selectedWork}
+	              showDebug={showDebug}
+	              autoFocusDraft={draftFocusKey === selected.dedupeKey}
+	              onDidAutofocusDraft={() => setDraftFocusKey(null)}
 	              onCopyDraft={copyDraft}
 	              onOpen={openLink}
 	              onSaveDraft={signedIn ? saveDraft : async () => {}}
@@ -958,34 +1070,48 @@ export default function CockpitPage() {
   )
 }
 
-function OpportunityDetail({
-  opportunity,
-  workItem,
-  showDebug,
-  onDone,
-  onIgnore,
-  onToggleGotReply,
-  onCloseMobile,
-  onSaveDraft,
-  onCopyDraft,
-  onOpen
-}: {
-  opportunity: Opportunity
-  workItem: WorkItem | null
-  showDebug: boolean
-  onDone: () => void
-  onIgnore: () => void
-  onToggleGotReply: () => void
-  onCloseMobile: () => void
+	function OpportunityDetail({
+	  opportunity,
+	  workItem,
+	  showDebug,
+	  autoFocusDraft,
+	  onDidAutofocusDraft,
+	  onDone,
+	  onIgnore,
+	  onToggleGotReply,
+	  onCloseMobile,
+	  onSaveDraft,
+	  onCopyDraft,
+	  onOpen
+	}: {
+	  opportunity: Opportunity
+	  workItem: WorkItem | null
+	  showDebug: boolean
+	  autoFocusDraft?: boolean
+	  onDidAutofocusDraft?: () => void
+	  onDone: () => void
+	  onIgnore: () => void
+	  onToggleGotReply: () => void
+	  onCloseMobile: () => void
   onSaveDraft: (draft: string) => void
   onCopyDraft: (draft: string) => void | Promise<void>
   onOpen: () => void
-}) {
-  const [draft, setDraft] = useState<string>(workItem?.draft ?? '')
+	}) {
+	  const [draft, setDraft] = useState<string>(workItem?.draft ?? '')
+	  const draftRef = useRef<HTMLTextAreaElement | null>(null)
+	
+	  useEffect(() => {
+	    setDraft(workItem?.draft ?? '')
+	  }, [workItem?.draft])
 
-  useEffect(() => {
-    setDraft(workItem?.draft ?? '')
-  }, [workItem?.draft])
+	  useEffect(() => {
+	    if (!autoFocusDraft) return
+	    const el = draftRef.current
+	    if (!el) return
+	    el.focus()
+	    el.setSelectionRange(el.value.length, el.value.length)
+	    onDidAutofocusDraft?.()
+	  }, [autoFocusDraft, onDidAutofocusDraft])
 
   const copyAndOpen = useCallback(async () => {
     if (!opportunity.url) return
@@ -1025,16 +1151,17 @@ function OpportunityDetail({
             {workItem?.last_copied_at ? `copied ${fmtTime(workItem.last_copied_at)}` : null}
           </div>
         </div>
-        <textarea
-          aria-label="Reply draft"
-          className={[
-            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
-            focusRing
-          ].join(' ')}
-          placeholder="Write a quick reply draft here (or paste from your bot)."
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-        />
+	        <textarea
+	          aria-label="Reply draft"
+	          ref={draftRef}
+	          className={[
+	            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
+	            focusRing
+	          ].join(' ')}
+	          placeholder="Write a quick reply draft here (or paste from your bot)."
+	          value={draft}
+	          onChange={e => setDraft(e.target.value)}
+	        />
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {opportunity.url && draft.trim() ? (
             <SmallButton onClick={() => void copyAndOpen()} tone="primary">
