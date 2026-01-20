@@ -17,3 +17,5 @@
 
 ## Runbooks (how to operate)
 - Supabase Edge + LLM: `docs/runbooks/2026-01-17-supabase-edge-llm-runbook.md`
+- X companion ingest: `docs/runbooks/2026-01-19-x-companion-ingest-runbook.md`
+- Telegram user companion (MTProto): `docs/runbooks/2026-01-19-telegram-user-companion-runbook.md`

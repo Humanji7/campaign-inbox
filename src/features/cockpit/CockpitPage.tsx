@@ -110,11 +110,11 @@ export default function CockpitPage() {
   const { data, error, isLoading, mutate } = useSWR(
     sb ? 'cockpit-v1' : null,
     async () => {
-      const [events, states] = await Promise.all([
+      const [events, states, workItems] = await Promise.all([
         listUnifiedEvents(sb!, { limit: 200 }),
-        listOpportunityStates(sb!, { limit: 600 })
+        listOpportunityStates(sb!, { limit: 600 }),
+        listWorkItems(sb!, { limit: 600 })
       ])
-      const workItems = await listWorkItems(sb!, { limit: 600 })
       return { events, states, workItems }
     },
     { revalidateOnFocus: false }

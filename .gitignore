@@ -25,3 +25,7 @@ sqlite_mcp_server.db
 .tg-user.session
 .tg-user-offset.json
 .tg-user-watch.json
+
+# Local dev (Codex/CLI)
+.dev.log
+.dev.pid

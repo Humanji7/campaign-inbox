@@ -1,6 +1,10 @@
 # Campaign Inbox — AI Init (как со мной работать)
 Дата: 2026-01-15
 
+> Status note (2026-01-20): project direction is pivoting toward **Brand Ops Cockpit** —
+> a pull-mode “control plane” for public brand ops (monitor signals → draft → jump to thread → act manually).
+> Current focus: **X/Twitter** end-to-end loop; other sources are optional/secondary.
+
 ## 1) Миссия MVP
 Сделать продукт для регулярной публикации в X/Twitter, который **уменьшает трение до публикации** и помогает поддерживать **постоянную активность**.
 
