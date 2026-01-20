@@ -13,14 +13,21 @@ export type UnifiedEvent = {
   payload: Record<string, unknown> | null
 }
 
-export async function listUnifiedEvents(sb: SupabaseClient, opts?: { limit?: number }) {
+export async function listUnifiedEvents(sb: SupabaseClient, opts?: { limit?: number; sources?: string[] }) {
   const limit = Math.max(1, Math.min(200, Number(opts?.limit ?? 60)))
 
-  const { data, error } = await sb
+  const sources = opts?.sources
+  let q = sb
     .from('unified_events')
     .select('id,source,type,external_id,occurred_at,actor_handle,target_handle,url,text,payload')
     .order('occurred_at', { ascending: false })
     .limit(limit)
+
+  if (Array.isArray(sources) && sources.length > 0) {
+    q = q.in('source', sources)
+  }
+
+  const { data, error } = await q
 
   if (error) throw error
   return (data ?? []) as UnifiedEvent[]

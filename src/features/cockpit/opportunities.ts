@@ -15,6 +15,15 @@ export type Opportunity = {
   why: string
 }
 
+export function dedupeKeySource(dedupeKey: string): Opportunity['source'] | null {
+  const parts = String(dedupeKey ?? '').split(':')
+  if (parts.length < 3) return null
+  if (parts[0] !== 'v1') return null
+  const src = parts[1]
+  if (src === 'x' || src === 'telegram') return src
+  return null
+}
+
 function minutesAgo(iso: string): number {
   const t = Date.parse(iso)
   if (!Number.isFinite(t)) return 1e9

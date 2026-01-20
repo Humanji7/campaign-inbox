@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOpportunities } from './opportunities'
+import { buildOpportunities, dedupeKeySource } from './opportunities'
 
 describe('buildOpportunities telegram kinds', () => {
   it('maps telegram payload intent to opportunity kind', () => {
@@ -54,3 +54,12 @@ describe('buildOpportunities telegram kinds', () => {
   })
 })
 
+describe('dedupeKeySource', () => {
+  it('parses v1 dedupe keys', () => {
+    expect(dedupeKeySource('v1:x:tweet:alice:123')).toBe('x')
+    expect(dedupeKeySource('v1:telegram:message:alice:tg:1:2')).toBe('telegram')
+    expect(dedupeKeySource('')).toBe(null)
+    expect(dedupeKeySource('v2:x:tweet:alice:123')).toBe(null)
+    expect(dedupeKeySource('v1:unknown:tweet:alice:123')).toBe(null)
+  })
+})
