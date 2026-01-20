@@ -40,6 +40,10 @@ function shortText(s: string | null, max = 140): string {
   return `${t.slice(0, Math.max(0, max - 1)).trimEnd()}…`
 }
 
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? one : many
+}
+
 function groupLatestByActor(events: UnifiedEvent[]): UnifiedEvent[] {
   const map = new Map<string, UnifiedEvent>()
   for (const e of events) {
@@ -228,6 +232,8 @@ export default function CockpitPage() {
     [events, states, ageHours]
   )
 
+  const opportunitiesAll72 = useMemo(() => buildOpportunities({ events, states, maxAgeHours: 72, max: 30 }), [events, states])
+
   const opportunities = useMemo(() => {
     let list = opportunitiesAll
     if (!includeMentions) list = list.filter(o => o.kind !== 'mention')
@@ -239,6 +245,63 @@ export default function CockpitPage() {
     }
     return list.slice(0, 12)
   }, [opportunitiesAll, includeMentions, queueOnly, stageFor])
+
+  const emptyHints = useMemo(() => {
+    const hints: { text: string; action?: { label: string; run: () => void } }[] = []
+    if (!signedIn) {
+      hints.push({ text: 'Sign in to load opportunities.' })
+      return hints
+    }
+
+    const base = opportunitiesAll
+    if (base.length === 0) {
+      if (ageHours !== 72 && opportunitiesAll72.length > 0) {
+        hints.push({
+          text: `Nothing in the last ${ageHours}h.`,
+          action: { label: 'Show 72h', run: () => setAgeHours(72) }
+        })
+      } else {
+        hints.push({ text: `No X events found in the last ${ageHours}h.` })
+      }
+      hints.push({ text: 'Tip: run the local companion, then Refresh.' })
+      return hints
+    }
+
+    const hasMentions = base.some(o => o.kind === 'mention')
+    const afterMentions = includeMentions ? base : base.filter(o => o.kind !== 'mention')
+    if (!includeMentions && hasMentions && afterMentions.length === 0) {
+      hints.push({
+        text: `Only ${plural(base.length, 'mention is', 'mentions are')} available.`,
+        action: { label: 'Show Mentions', run: () => setIncludeMentions(true) }
+      })
+      return hints
+    }
+
+    if (queueOnly) {
+      const queue = afterMentions.filter(o => {
+        const st = stageFor(o.dedupeKey, o.state)
+        return st !== 'done' && st !== 'ignored'
+      })
+      if (queue.length === 0 && afterMentions.length > 0) {
+        hints.push({
+          text: 'Everything here is done/ignored.',
+          action: { label: 'Show All', run: () => setQueueOnly(false) }
+        })
+        return hints
+      }
+    }
+
+    if (ageHours !== 72 && opportunitiesAll72.length > 0) {
+      hints.push({
+        text: `Nothing matches in ${ageHours}h.`,
+        action: { label: 'Show 72h', run: () => setAgeHours(72) }
+      })
+    } else {
+      hints.push({ text: 'No opportunities match these filters.' })
+    }
+
+    return hints
+  }, [ageHours, includeMentions, opportunitiesAll, opportunitiesAll72, queueOnly, signedIn, stageFor])
 
   const weekStart = useMemo(() => weekStartIsoUtc(), [])
   const repliesThisWeek = useMemo(() => {
@@ -501,13 +564,30 @@ export default function CockpitPage() {
             </div>
             {opportunities.length === 0 ? (
               <div className="p-3 text-sm text-zinc-400">
-                {!signedIn ? (
-                  'Sign in to load opportunities.'
-                ) : (
-                  <>
-                    No opportunities. Run: <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code>
-                  </>
-                )}
+                <div className="space-y-2">
+                  {emptyHints.map((h, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">{h.text}</div>
+                      {h.action ? (
+                        <button
+                          className={[
+                            'shrink-0 rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-900',
+                            focusRing
+                          ].join(' ')}
+                          onClick={h.action.run}
+                          type="button"
+                        >
+                          {h.action.label}
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {signedIn ? (
+                    <div className="text-xs text-zinc-500">
+                      Run: <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-auto overscroll-contain">
