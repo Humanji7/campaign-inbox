@@ -223,19 +223,25 @@ export default function CockpitPage() {
   }, [palette])
 
   useEffect(() => {
-    const today = todayLocalYmd()
-    const last = getLocalStorageItem(LS_TODAY_PLAN_DATE)
-    if (last === today) return
+    const check = () => {
+      const today = todayLocalYmd()
+      const last = getLocalStorageItem(LS_TODAY_PLAN_DATE)
+      if (last === today) return
 
-    setLocalStorageItem(LS_TODAY_PLAN_DATE, today)
-    setDoNowSlots(curr => {
-      const slots = normalizeDoNowSlots(curr).map(s => ({ ...s }))
-      for (const s of slots) {
-        if (s.pinned) continue
-        s.dedupeKey = null
-      }
-      return slots
-    })
+      setLocalStorageItem(LS_TODAY_PLAN_DATE, today)
+      setDoNowSlots(curr => {
+        const slots = normalizeDoNowSlots(curr).map(s => ({ ...s }))
+        for (const s of slots) {
+          if (s.pinned) continue
+          s.dedupeKey = null
+        }
+        return slots
+      })
+    }
+
+    check()
+    const id = window.setInterval(check, 60_000)
+    return () => window.clearInterval(id)
   }, [])
 
   useEffect(() => {
@@ -315,6 +321,7 @@ export default function CockpitPage() {
     (dedupeKey: string, fallbackState: OpportunityState['status']): WorkItem['stage'] => {
       const w = workByKey.get(dedupeKey)
       if (w?.stage) return w.stage
+      if (w?.last_opened_at) return 'drafting'
       if (fallbackState === 'done') return 'done'
       if (fallbackState === 'ignored') return 'ignored'
       return 'new'
@@ -526,9 +533,13 @@ export default function CockpitPage() {
 
   const markOpened = useCallback(async () => {
     if (!selected) return
-    await markWorkItemOpened(sb, selected.dedupeKey)
+    const currentStage = stageFor(selected.dedupeKey, selected.state)
+    await Promise.all([
+      markWorkItemOpened(sb, selected.dedupeKey),
+      signedIn && currentStage === 'new' ? upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'drafting' }) : Promise.resolve()
+    ])
     await mutate()
-  }, [sb, mutate, selected])
+  }, [sb, mutate, selected, signedIn, stageFor])
 
   const copyDraft = useCallback(
     async (draft: string) => {
@@ -556,11 +567,15 @@ export default function CockpitPage() {
     (o: Opportunity) => {
       if (!o.url) return
       window.open(o.url, '_blank', 'noopener,noreferrer')
-      void markWorkItemOpened(sb, o.dedupeKey)
+      const currentStage = stageFor(o.dedupeKey, o.state)
+      void Promise.all([
+        markWorkItemOpened(sb, o.dedupeKey).catch(() => {}),
+        signedIn && currentStage === 'new' ? upsertWorkItem(sb, { dedupeKey: o.dedupeKey, stage: 'drafting' }) : Promise.resolve()
+      ])
         .then(() => mutate())
         .catch(() => {})
     },
-    [sb, mutate]
+    [sb, mutate, signedIn, stageFor]
   )
 
   const doneFor = useCallback(
@@ -829,12 +844,12 @@ export default function CockpitPage() {
                 const stage = o ? stageFor(o.dedupeKey, o.state) : 'new'
                 const draft = o ? (workByKey.get(o.dedupeKey)?.draft ?? '') : ''
 
-                const nextStep = (() => {
-                  if (!o) return null
-                  const hasDraft = Boolean(draft.trim())
-                  const isDone = stage === 'done' || stage === 'ignored'
-                  if (isDone) return { key: 'done' as const }
-                  if (stage === 'ready' || hasDraft) {
+	                const nextStep = (() => {
+	                  if (!o) return null
+	                  const hasDraft = Boolean(draft.trim())
+	                  const isDone = stage === 'done' || stage === 'ignored'
+	                  if (isDone) return { key: 'done' as const }
+	                  if (stage === 'ready' || hasDraft) {
                     if (o.url) {
                       return {
                         key: 'reply' as const,
@@ -850,14 +865,25 @@ export default function CockpitPage() {
                       key: 'reply' as const,
                       label: 'Copy Reply',
                       hint: 'Copy draft',
-                      run: async () => await copyDraftFor(o.dedupeKey, draft)
-                    }
-                  }
-                  if (o.url) {
-                    return { key: 'open' as const, label: 'Open Thread', hint: 'Read context on X', run: async () => openLinkFor(o) }
-                  }
-                  return {
-                    key: 'draft' as const,
+	                      run: async () => await copyDraftFor(o.dedupeKey, draft)
+	                    }
+	                  }
+	                  if (stage === 'drafting') {
+	                    return {
+	                      key: 'draft' as const,
+	                      label: 'Write Draft',
+	                      hint: 'Start a reply',
+	                      run: () => {
+	                        setDraftFocusKey(o.dedupeKey)
+	                        openDetail(o.dedupeKey)
+	                      }
+	                    }
+	                  }
+	                  if (o.url) {
+	                    return { key: 'open' as const, label: 'Open Thread', hint: 'Read context on X', run: async () => openLinkFor(o) }
+	                  }
+	                  return {
+	                    key: 'draft' as const,
                     label: 'Write Draft',
                     hint: 'Start a reply',
                     run: () => {
@@ -1165,35 +1191,35 @@ export default function CockpitPage() {
   )
 }
 
-	function OpportunityDetail({
-	  opportunity,
-	  workItem,
-	  showDebug,
-	  autoFocusDraft,
-	  onDidAutofocusDraft,
-	  onDone,
-	  onIgnore,
-	  onToggleGotReply,
-	  onCloseMobile,
-	  onSaveDraft,
-	  onCopyDraft,
-	  onOpen
-	}: {
-	  opportunity: Opportunity
-	  workItem: WorkItem | null
-	  showDebug: boolean
-	  autoFocusDraft?: boolean
-	  onDidAutofocusDraft?: () => void
-	  onDone: () => void
-	  onIgnore: () => void
-	  onToggleGotReply: () => void
-	  onCloseMobile: () => void
+function OpportunityDetail({
+  opportunity,
+  workItem,
+  showDebug,
+  autoFocusDraft,
+  onDidAutofocusDraft,
+  onDone,
+  onIgnore,
+  onToggleGotReply,
+  onCloseMobile,
+  onSaveDraft,
+  onCopyDraft,
+  onOpen
+}: {
+  opportunity: Opportunity
+  workItem: WorkItem | null
+  showDebug: boolean
+  autoFocusDraft?: boolean
+  onDidAutofocusDraft?: () => void
+  onDone: () => void
+  onIgnore: () => void
+  onToggleGotReply: () => void
+  onCloseMobile: () => void
   onSaveDraft: (draft: string) => void
   onCopyDraft: (draft: string) => void | Promise<void>
   onOpen: () => void
-	}) {
-	  const [draft, setDraft] = useState<string>(workItem?.draft ?? '')
-	  const draftRef = useRef<HTMLTextAreaElement | null>(null)
+}) {
+  const [draft, setDraft] = useState<string>(workItem?.draft ?? '')
+  const draftRef = useRef<HTMLTextAreaElement | null>(null)
 	
 	  useEffect(() => {
 	    setDraft(workItem?.draft ?? '')
@@ -1208,11 +1234,41 @@ export default function CockpitPage() {
 	    onDidAutofocusDraft?.()
 	  }, [autoFocusDraft, onDidAutofocusDraft])
 
-  const copyAndOpen = useCallback(async () => {
-    if (!opportunity.url) return
-    await onCopyDraft(draft)
-    onOpen()
-  }, [draft, onCopyDraft, onOpen, opportunity.url])
+	  const copyAndOpen = useCallback(async () => {
+	    if (!opportunity.url) return
+	    await onCopyDraft(draft)
+	    onOpen()
+	  }, [draft, onCopyDraft, onOpen, opportunity.url])
+
+	  const focusDraft = useCallback(() => {
+	    const el = draftRef.current
+	    if (!el) return
+	    el.focus()
+	    el.setSelectionRange(el.value.length, el.value.length)
+	  }, [])
+
+	  const detailStep = useMemo(() => {
+	    const stage =
+	      workItem?.stage ??
+	      (workItem?.last_opened_at ? 'drafting' : opportunity.state === 'done' ? 'done' : opportunity.state === 'ignored' ? 'ignored' : 'new')
+	    const hasDraft = Boolean(draft.trim())
+	    if (stage === 'done' || stage === 'ignored') return 'done' as const
+	    if (stage === 'ready' || hasDraft) return 'reply' as const
+	    if (stage === 'drafting') return 'draft' as const
+	    if (opportunity.url) return 'open' as const
+	    return 'draft' as const
+	  }, [draft, opportunity.state, opportunity.url, workItem?.last_opened_at, workItem?.stage])
+
+	  const primaryDetailAction = useMemo(() => {
+	    if (detailStep === 'reply') {
+	      return opportunity.url
+	        ? { label: 'Reply Now', hint: 'Copy & open thread', run: async () => await copyAndOpen() }
+	        : { label: 'Copy Reply', hint: 'Copy draft', run: async () => await onCopyDraft(draft) }
+	    }
+	    if (detailStep === 'open') return { label: 'Open Thread', hint: 'Read context on X', run: async () => onOpen() }
+	    if (detailStep === 'draft') return { label: 'Write Draft', hint: 'Focus editor', run: async () => focusDraft() }
+	    return null
+	  }, [copyAndOpen, detailStep, draft, focusDraft, onCopyDraft, onOpen, opportunity.url])
 
   return (
     <div className="space-y-4">
@@ -1227,6 +1283,7 @@ export default function CockpitPage() {
             {opportunity.state !== 'new' ? <Pill>{opportunity.state}</Pill> : null}
             {opportunity.gotReply ? <Pill tone="good">Got Reply</Pill> : null}
           </div>
+          <NextSteps step={detailStep} />
         </div>
         <div className="flex shrink-0 items-center gap-2 md:hidden">
           <SmallButton onClick={onCloseMobile}>Close</SmallButton>
@@ -1246,27 +1303,37 @@ export default function CockpitPage() {
             {workItem?.last_copied_at ? `copied ${fmtTime(workItem.last_copied_at)}` : null}
           </div>
         </div>
-	        <textarea
-	          aria-label="Reply draft"
-	          ref={draftRef}
-	          className={[
-	            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
-	            focusRing
-	          ].join(' ')}
-	          placeholder="Write a quick reply draft here (or paste from your bot)."
-	          value={draft}
-	          onChange={e => setDraft(e.target.value)}
-	        />
+        {primaryDetailAction ? (
+          <button
+            className={[
+              'mt-2 w-full rounded-xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-4 py-3 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
+              focusRing
+            ].join(' ')}
+            onClick={() => void primaryDetailAction.run()}
+            type="button"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span>{primaryDetailAction.label}</span>
+              <span className="text-xs font-medium text-[color:var(--muted)]">{primaryDetailAction.hint}</span>
+            </div>
+          </button>
+        ) : null}
+        <textarea
+          aria-label="Reply draft"
+          ref={draftRef}
+          className={[
+            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
+            focusRing
+          ].join(' ')}
+          placeholder="Write a quick reply draft here (or paste from your bot)."
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+        />
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {opportunity.url && draft.trim() ? (
-            <SmallButton onClick={() => void copyAndOpen()} tone="primary">
-              Copy & Open
-            </SmallButton>
-          ) : null}
           <SmallButton onClick={() => onSaveDraft(draft)} tone={opportunity.url && draft.trim() ? 'neutral' : 'primary'}>
             Save
           </SmallButton>
-          <SmallButton onClick={() => void onCopyDraft(draft)}>Copy</SmallButton>
+          {draft.trim() ? <SmallButton onClick={() => void onCopyDraft(draft)}>Copy</SmallButton> : null}
           {opportunity.url ? <SmallButton onClick={onOpen}>Open</SmallButton> : null}
         </div>
       </div>
