@@ -215,6 +215,8 @@ export default function CockpitPage() {
   const [authBusy, setAuthBusy] = useState(false)
   const [draftFocusKey, setDraftFocusKey] = useState<string | null>(null)
   const [slotMenuOpen, setSlotMenuOpen] = useState<number | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [appMenuOpen, setAppMenuOpen] = useState(false)
 
   useEffect(() => {
     if (palette === 'warm') document.documentElement.dataset.theme = 'warm'
@@ -255,6 +257,14 @@ export default function CockpitPage() {
   useEffect(() => {
     setLocalStorageItem(LS_AGE_HOURS, String(ageHours))
   }, [ageHours])
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = []
+    if (queueOnly) parts.push('Queue')
+    if (includeMentions) parts.push('Mentions')
+    parts.push(`${ageHours}h`)
+    return parts.join(' · ')
+  }, [ageHours, includeMentions, queueOnly])
 
   useEffect(() => {
     setLocalStorageItem(LS_DO_NOW, JSON.stringify(doNowSlots))
@@ -681,6 +691,40 @@ export default function CockpitPage() {
     }
   }, [slotMenuOpen])
 
+  useEffect(() => {
+    if (!filtersOpen) return
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      const el = target.closest('[data-filters-root]')
+      if (el) return
+      setFiltersOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    window.addEventListener('touchstart', handler)
+    return () => {
+      window.removeEventListener('mousedown', handler)
+      window.removeEventListener('touchstart', handler)
+    }
+  }, [filtersOpen])
+
+  useEffect(() => {
+    if (!appMenuOpen) return
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      const el = target.closest('[data-app-menu-root]')
+      if (el) return
+      setAppMenuOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    window.addEventListener('touchstart', handler)
+    return () => {
+      window.removeEventListener('mousedown', handler)
+      window.removeEventListener('touchstart', handler)
+    }
+  }, [appMenuOpen])
+
   const actionIgnore = useCallback(() => {
     if (!selected) return
     void Promise.all([
@@ -699,7 +743,10 @@ export default function CockpitPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSlotMenuOpen(null)
+      if (e.key !== 'Escape') return
+      setSlotMenuOpen(null)
+      setFiltersOpen(false)
+      setAppMenuOpen(false)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -707,28 +754,164 @@ export default function CockpitPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance">Brand Ops Cockpit · X</h1>
-          <div className="text-xs text-zinc-400">
-            {lastSync ? `Fresh as of ${fmtTime(lastSync)} · Active hours 08:00–22:00 ET` : 'No events yet'}
+      <div className="-mx-4 sticky top-0 z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/90 px-4 py-3 backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-tight">Brand Ops Cockpit</h1>
+              <Pill>X</Pill>
+              <Pill tone={repliesThisWeek >= 2 ? 'good' : 'neutral'}>
+                <span className="tabular-nums">{Math.min(2, repliesThisWeek)}/2</span> this week
+              </Pill>
+            </div>
+            <div className="mt-0.5 text-[11px] text-[color:var(--muted)]">
+              {lastSync ? `Fresh as of ${fmtTime(lastSync)} · Active hours 08:00–22:00 ET` : 'No events yet'}
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <SmallButton onClick={() => void mutate()} tone="primary">
-            Refresh
-          </SmallButton>
-          <SmallButton onClick={() => setShowDebug(v => !v)}>{showDebug ? 'Hide Debug' : 'Debug'}</SmallButton>
-          {showDebug ? (
-            <SmallButton onClick={() => setPalette(p => (p === 'warm' ? 'default' : 'warm'))}>
-              Palette: {palette === 'warm' ? 'Warm' : 'Default'}
+          <div className="flex shrink-0 items-center gap-2">
+            <SmallButton onClick={() => void mutate()} tone="primary">
+              Refresh
             </SmallButton>
-          ) : null}
+
+            <div className="relative" data-filters-root>
+              <button
+                aria-expanded={filtersOpen}
+                aria-label="Filters"
+                className={[
+                  'hidden rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-left text-xs text-zinc-200 hover:bg-[color:var(--surface2)] sm:block',
+                  focusRing
+                ].join(' ')}
+                onClick={() => {
+                  setAppMenuOpen(false)
+                  setSlotMenuOpen(null)
+                  setFiltersOpen(v => !v)
+                }}
+                type="button"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Filters</span>
+                  <span className="text-[11px] text-[color:var(--muted)]">{filterSummary}</span>
+                </div>
+              </button>
+
+              <button
+                aria-expanded={filtersOpen}
+                aria-label="Filters"
+                className={[
+                  'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-2 text-xs text-zinc-200 hover:bg-[color:var(--surface2)] sm:hidden',
+                  focusRing
+                ].join(' ')}
+                onClick={() => {
+                  setAppMenuOpen(false)
+                  setSlotMenuOpen(null)
+                  setFiltersOpen(v => !v)
+                }}
+                type="button"
+              >
+                ⚙︎
+              </button>
+
+              {filtersOpen ? (
+                <div
+                  className="absolute right-0 top-11 z-20 w-80 rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3 shadow-lg"
+                  role="dialog"
+                  aria-label="Filters"
+                >
+                  <div className="text-xs font-semibold text-zinc-300">Filters</div>
+                  <div className="mt-2 grid gap-2">
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-xs text-zinc-200">
+                      <span>Queue only</span>
+                      <input
+                        checked={queueOnly}
+                        className="accent-zinc-200"
+                        onChange={e => setQueueOnly(e.target.checked)}
+                        type="checkbox"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-xs text-zinc-200">
+                      <span>Mentions</span>
+                      <input
+                        checked={includeMentions}
+                        className="accent-zinc-200"
+                        onChange={e => setIncludeMentions(e.target.checked)}
+                        type="checkbox"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-xs text-zinc-200">
+                      <span>Age window</span>
+                      <select
+                        aria-label="Age window"
+                        className={[
+                          'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200',
+                          focusRing
+                        ].join(' ')}
+                        onChange={e => setAgeHours(Number(e.target.value) as any)}
+                        value={ageHours}
+                      >
+                        <option value={6}>6h</option>
+                        <option value={24}>24h</option>
+                        <option value={72}>72h</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-3 border-t border-[color:var(--border)] pt-3 text-[11px] text-[color:var(--muted)]">
+                    Shortcuts: <span className="text-zinc-200">j/k</span> move · <span className="text-zinc-200">Enter</span>{' '}
+                    open · <span className="text-zinc-200">d</span> done · <span className="text-zinc-200">i</span> ignore
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="relative" data-app-menu-root>
+              <button
+                aria-expanded={appMenuOpen}
+                aria-label="More"
+                className={[
+                  'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-2 text-xs text-zinc-200 hover:bg-[color:var(--surface2)]',
+                  focusRing
+                ].join(' ')}
+                onClick={() => {
+                  setFiltersOpen(false)
+                  setSlotMenuOpen(null)
+                  setAppMenuOpen(v => !v)
+                }}
+                type="button"
+              >
+                ⋯
+              </button>
+              {appMenuOpen ? (
+                <div
+                  className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-lg"
+                  role="menu"
+                >
+                  <div className="px-3 py-2 text-xs text-[color:var(--muted)]">{signedIn ? `Signed in as ${signedInLabel}` : 'Signed out'}</div>
+                  <div className="h-px bg-[color:var(--border)]" />
+                  <MenuButton
+                    label={showDebug ? 'Hide Debug' : 'Show Debug'}
+                    onClick={() => {
+                      setShowDebug(v => !v)
+                      setAppMenuOpen(false)
+                    }}
+                  />
+                  {showDebug ? (
+                    <MenuButton
+                      label={`Palette: ${palette === 'warm' ? 'Warm' : 'Default'}`}
+                      onClick={() => {
+                        setPalette(p => (p === 'warm' ? 'default' : 'warm'))
+                        setAppMenuOpen(false)
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
       {!signedIn ? (
-        <div className="rounded-2xl border border-amber-900/60 bg-[color:var(--surface)] p-4 text-sm text-amber-200">
+        <div className="rounded-2xl border border-amber-900/60 bg-[color:var(--surface)] p-4 text-sm text-amber-200 shadow-sm">
           Signed out. Cockpit data is per-user (RLS). Connect GitHub to load your X queue.
           <div className="mt-3">
             <button
@@ -745,7 +928,7 @@ export default function CockpitPage() {
           </div>
         </div>
       ) : (
-        <div className="text-xs text-zinc-500">Signed in as {signedInLabel}</div>
+        <div className="text-xs text-[color:var(--muted)]">Signed in as {signedInLabel}</div>
       )}
 
       {isLoading ? (
@@ -758,69 +941,14 @@ export default function CockpitPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-[440px_1fr]">
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5 backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold">Weekly Target</div>
-                <div className="text-xs text-zinc-400">P=2 replies from targets</div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-semibold tabular-nums text-white">{Math.min(2, repliesThisWeek)}/2</div>
-                <div className="text-xs text-zinc-500">Week Starts {fmtDate(weekStart)}</div>
-              </div>
-            </div>
-          </div>
+      <div className="grid gap-6 md:grid-cols-[420px_1fr] lg:grid-cols-[460px_1fr]">
+        <div className="space-y-6">
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-medium text-zinc-300">Filters</div>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs text-zinc-300">
-                  <input
-                    checked={queueOnly}
-                    className="accent-zinc-200"
-                    onChange={e => setQueueOnly(e.target.checked)}
-                    type="checkbox"
-                  />
-                  Queue only
-                </label>
-                <label className="flex items-center gap-2 text-xs text-zinc-300">
-                  <input
-                    checked={includeMentions}
-                    className="accent-zinc-200"
-                    onChange={e => setIncludeMentions(e.target.checked)}
-                    type="checkbox"
-                  />
-                  Mentions
-                </label>
-                <select
-                  aria-label="Age window"
-                  className={[
-                    'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200',
-                    focusRing
-                  ].join(' ')}
-                  onChange={e => setAgeHours(Number(e.target.value) as any)}
-                  value={ageHours}
-                >
-                  <option value={6}>6h</option>
-                  <option value={24}>24h</option>
-                  <option value={72}>72h</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-2 text-[11px] text-zinc-500 md:block">
-              Shortcuts: <span className="text-zinc-300">j/k</span> move · <span className="text-zinc-300">Enter</span>{' '}
-              open · <span className="text-zinc-300">d</span> done · <span className="text-zinc-300">i</span> ignore
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] backdrop-blur">
-            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
+          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm backdrop-blur">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-4">
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-zinc-300">Today Plan</div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">Auto-refreshes daily · Pin to keep</div>
+                <div className="text-xs font-semibold text-zinc-200">Today Plan</div>
+                <div className="mt-0.5 text-[11px] text-[color:var(--muted)]">Top 3 for today · Auto-refreshes daily</div>
               </div>
               <div className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
                 <span className="tabular-nums">
@@ -897,7 +1025,7 @@ export default function CockpitPage() {
                   <div
                     key={idx}
                     className={[
-                      'px-4 py-4',
+                      'px-5 py-5',
                       active ? 'bg-[color:var(--accent-bg)]' : '',
                       slot?.pinned ? 'bg-[color:var(--surface2)]' : ''
                     ].join(' ')}
@@ -948,7 +1076,7 @@ export default function CockpitPage() {
                       {nextStep && (nextStep as any).label ? (
                         <button
                           className={[
-                            'flex-1 rounded-xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-4 py-3 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
+                            'flex-1 rounded-2xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-5 py-4 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
                             focusRing
                           ].join(' ')}
                           onClick={() => {
@@ -999,13 +1127,13 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] backdrop-blur">
-            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
-              <div className="text-xs font-semibold text-zinc-300">Backlog</div>
+          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-sm backdrop-blur">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-5 py-4">
+              <div className="text-xs font-semibold text-zinc-200">Backlog</div>
               <div className="text-xs tabular-nums text-zinc-500">{opportunities.length} items</div>
             </div>
             {opportunities.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-400">
+              <div className="p-5 text-sm text-zinc-400">
                 <div className="space-y-2">
                   {emptyHints.map((h, idx) => (
                     <div key={idx} className="flex items-center justify-between gap-3">
@@ -1040,7 +1168,7 @@ export default function CockpitPage() {
                     <div
                       key={o.dedupeKey}
                       className={[
-                        'flex items-stretch justify-between gap-2 border-b border-zinc-900 px-3 py-2',
+                        'flex items-stretch justify-between gap-2 border-b border-zinc-900/80 px-4 py-3',
                         active ? 'bg-zinc-900/40' : ''
                       ].join(' ')}
                     >
@@ -1083,9 +1211,12 @@ export default function CockpitPage() {
           </div>
       </div>
 
-      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5 backdrop-blur">
+      <div className="rounded-3xl bg-[color:var(--surface)] p-5 shadow-sm backdrop-blur">
         {!selected ? (
-          <div className="text-sm text-zinc-400">Pick an item to see details.</div>
+          <div className="text-sm text-zinc-400">
+            Pick an item from <span className="text-zinc-200">Today Plan</span> or <span className="text-zinc-200">Backlog</span> to
+            compose a reply.
+          </div>
         ) : (
           <OpportunityDetail
               opportunity={selected}
@@ -1271,7 +1402,7 @@ function OpportunityDetail({
 	  }, [copyAndOpen, detailStep, draft, focusDraft, onCopyDraft, onOpen, opportunity.url])
 
   return (
-    <div className="space-y-4">
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface2)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
@@ -1290,13 +1421,13 @@ function OpportunityDetail({
         </div>
       </div>
 
-      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3">
+      <div className="mt-4 border-t border-[color:var(--border)] pt-4">
         <div className="text-[11px] font-medium text-zinc-400">Context</div>
         <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-100">{shortText(opportunity.text, 800)}</div>
         <div className="mt-2 text-xs text-zinc-500">{opportunity.why}</div>
       </div>
 
-      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3">
+      <div className="mt-4 border-t border-[color:var(--border)] pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] font-medium text-zinc-400">Draft</div>
           <div className="flex items-center gap-2 text-[11px] text-zinc-500">
@@ -1306,7 +1437,7 @@ function OpportunityDetail({
         {primaryDetailAction ? (
           <button
             className={[
-              'mt-2 w-full rounded-xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-4 py-3 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
+              'mt-2 w-full rounded-2xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-5 py-4 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
               focusRing
             ].join(' ')}
             onClick={() => void primaryDetailAction.run()}
@@ -1322,7 +1453,7 @@ function OpportunityDetail({
           aria-label="Reply draft"
           ref={draftRef}
           className={[
-            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
+            'mt-2 min-h-[140px] w-full resize-y rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600',
             focusRing
           ].join(' ')}
           placeholder="Write a quick reply draft here (or paste from your bot)."
@@ -1338,24 +1469,26 @@ function OpportunityDetail({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <SmallButton onClick={onDone} tone="primary">
-          Done
-        </SmallButton>
-        <SmallButton onClick={onIgnore}>Ignore</SmallButton>
-        <button
-          className={[
-            'rounded-lg border px-2 py-1 text-xs transition',
-            opportunity.gotReply
-              ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/60'
-              : 'border-[color:var(--border)] bg-[color:var(--surface)] text-[color:var(--muted)] hover:bg-[color:var(--surface2)]',
-            focusRing
-          ].join(' ')}
-          onClick={onToggleGotReply}
-          type="button"
-        >
-          Got Reply
-        </button>
+      <div className="mt-4 border-t border-[color:var(--border)] pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <SmallButton onClick={onDone} tone="primary">
+            Done
+          </SmallButton>
+          <SmallButton onClick={onIgnore}>Ignore</SmallButton>
+          <button
+            className={[
+              'rounded-lg border px-2 py-1 text-xs transition',
+              opportunity.gotReply
+                ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/60'
+                : 'border-[color:var(--border)] bg-[color:var(--surface)] text-[color:var(--muted)] hover:bg-[color:var(--surface2)]',
+              focusRing
+            ].join(' ')}
+            onClick={onToggleGotReply}
+            type="button"
+          >
+            Got Reply
+          </button>
+        </div>
       </div>
     </div>
   )
