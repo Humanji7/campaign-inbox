@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
 import { buildOpportunities, dedupeKeySource, type Opportunity, weekStartIsoUtc } from './opportunities'
+import { addToDoNow, buildDoNowPlan, normalizeDoNowSlots, swapDoNowSlot, type DoNowSlot } from './doNowPlan'
 import {
   listOpportunityStates,
   listUnifiedEvents,
@@ -78,6 +79,7 @@ function setLocalStorageItem(key: string, value: string): void {
 const LS_QUEUE_ONLY = 'cockpit.x.queueOnly.v1'
 const LS_INCLUDE_MENTIONS = 'cockpit.x.includeMentions.v1'
 const LS_AGE_HOURS = 'cockpit.x.ageHours.v1'
+const LS_DO_NOW = 'cockpit.x.doNow.v1'
 
 function readAgeHours(): 6 | 24 | 72 {
   const raw = getLocalStorageItem(LS_AGE_HOURS)
@@ -143,6 +145,15 @@ export default function CockpitPage() {
   const [includeMentions, setIncludeMentions] = useState(() => readBool(LS_INCLUDE_MENTIONS, true))
   const [queueOnly, setQueueOnly] = useState(() => readBool(LS_QUEUE_ONLY, true))
   const [ageHours, setAgeHours] = useState<6 | 24 | 72>(() => readAgeHours())
+  const [doNowSlots, setDoNowSlots] = useState<DoNowSlot[]>(() => {
+    const raw = getLocalStorageItem(LS_DO_NOW)
+    if (!raw) return normalizeDoNowSlots([])
+    try {
+      return normalizeDoNowSlots(JSON.parse(raw))
+    } catch {
+      return normalizeDoNowSlots([])
+    }
+  })
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
@@ -158,6 +169,10 @@ export default function CockpitPage() {
   useEffect(() => {
     setLocalStorageItem(LS_AGE_HOURS, String(ageHours))
   }, [ageHours])
+
+  useEffect(() => {
+    setLocalStorageItem(LS_DO_NOW, JSON.stringify(doNowSlots))
+  }, [doNowSlots])
 
   const { data, error, isLoading, mutate } = useSWR(
     sb ? 'cockpit-x-v2' : null,
@@ -233,6 +248,25 @@ export default function CockpitPage() {
   )
 
   const opportunitiesAll72 = useMemo(() => buildOpportunities({ events, states, maxAgeHours: 72, max: 30 }), [events, states])
+
+  const doNowPlan = useMemo(() => {
+    return buildDoNowPlan({
+      slots: doNowSlots,
+      candidates: opportunitiesAll,
+      includeMentions,
+      queueOnly,
+      stageFor
+    })
+  }, [doNowSlots, opportunitiesAll, includeMentions, queueOnly, stageFor])
+
+  // Keep slots in sync with current candidates + filters (drop invalid keys, fill empties).
+  useEffect(() => {
+    const next = doNowPlan.slots
+    const a = JSON.stringify(doNowSlots)
+    const b = JSON.stringify(next)
+    if (a !== b) setDoNowSlots(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doNowPlan.slots])
 
   const opportunities = useMemo(() => {
     let list = opportunitiesAll
@@ -325,9 +359,9 @@ export default function CockpitPage() {
 
   const selected = useMemo(() => {
     const key = selectedKey
-    if (!key) return opportunities[0] ?? null
+    if (!key) return doNowPlan.items.find(Boolean) ?? opportunities[0] ?? null
     return opportunitiesAll.find(o => o.dedupeKey === key) ?? opportunities[0] ?? null
-  }, [selectedKey, opportunities, opportunitiesAll])
+  }, [selectedKey, doNowPlan.items, opportunities, opportunitiesAll])
 
   useEffect(() => {
     if (!selected) return
@@ -437,6 +471,62 @@ export default function CockpitPage() {
     window.open(selected.url, '_blank', 'noopener,noreferrer')
     void markOpened()
   }, [markOpened, selected])
+
+  const openLinkFor = useCallback(
+    (o: Opportunity) => {
+      if (!o.url) return
+      window.open(o.url, '_blank', 'noopener,noreferrer')
+      void markWorkItemOpened(sb, o.dedupeKey)
+        .then(() => mutate())
+        .catch(() => {})
+    },
+    [sb, mutate]
+  )
+
+  const copyDraftFor = useCallback(
+    async (dedupeKey: string, draft: string) => {
+      const text = draft.trim()
+      if (!text) return
+      await navigator.clipboard.writeText(text)
+      await Promise.all([
+        upsertWorkItem(sb, { dedupeKey, draft: text, stage: 'ready' }).catch(() => {}),
+        markWorkItemCopied(sb, dedupeKey)
+      ])
+      await mutate()
+    },
+    [sb, mutate]
+  )
+
+  const togglePinSlot = useCallback((idx: number) => {
+    setDoNowSlots(curr => {
+      const next = normalizeDoNowSlots(curr).map(s => ({ ...s }))
+      const i = Math.max(0, Math.min(2, Math.floor(idx)))
+      const slot = next[i]
+      if (!slot?.dedupeKey) return next
+      next[i] = { ...slot, pinned: !slot.pinned }
+      return next
+    })
+  }, [])
+
+  const swapSlot = useCallback(
+    (idx: number) => {
+      setDoNowSlots(curr =>
+        swapDoNowSlot({
+          slots: curr,
+          candidates: opportunitiesAll,
+          slotIndex: idx,
+          includeMentions,
+          queueOnly,
+          stageFor
+        })
+      )
+    },
+    [opportunitiesAll, includeMentions, queueOnly, stageFor]
+  )
+
+  const addToPlan = useCallback((dedupeKey: string) => {
+    setDoNowSlots(curr => addToDoNow({ slots: curr, dedupeKey }))
+  }, [])
 
   const actionIgnore = useCallback(() => {
     if (!selected) return
@@ -559,7 +649,103 @@ export default function CockpitPage() {
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950">
             <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-              <div className="text-xs font-semibold text-zinc-300">Do Next</div>
+              <div className="text-xs font-semibold text-zinc-300">Do Now</div>
+              <div className="text-xs text-zinc-500">Top 3</div>
+            </div>
+            <div className="divide-y divide-zinc-900">
+              {doNowPlan.items.map((o, idx) => {
+                const slot = doNowPlan.slots[idx]
+                const active = selected?.dedupeKey === o?.dedupeKey
+                const stage = o ? stageFor(o.dedupeKey, o.state) : 'new'
+                const draft = o ? (workByKey.get(o.dedupeKey)?.draft ?? '') : ''
+                const primary =
+                  o && draft.trim()
+                    ? o.url
+                      ? { label: 'Copy & Open', run: async () => { await copyDraftFor(o.dedupeKey, draft); openLinkFor(o) } }
+                      : { label: 'Copy', run: async () => { await copyDraftFor(o.dedupeKey, draft) } }
+                    : o && o.url
+                      ? { label: 'Open', run: async () => { openLinkFor(o) } }
+                      : o
+                        ? { label: 'Draft', run: () => openDetail(o.dedupeKey) }
+                        : null
+
+                return (
+                  <div
+                    key={idx}
+                    className={[
+                      'px-3 py-3',
+                      active ? 'bg-zinc-900/30' : ''
+                    ].join(' ')}
+                  >
+                    {o ? (
+                      <button
+                        className={['w-full text-left', focusRing].join(' ')}
+                        onClick={() => openDetail(o.dedupeKey)}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-xs text-zinc-400">
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950 text-[11px] font-semibold text-zinc-200">
+                                {idx + 1}
+                              </span>
+                              <span className="font-medium text-zinc-200">@{o.actorHandle ?? 'unknown'}</span>
+                              <span>·</span>
+                              <span>{fmtTime(o.occurredAt)}</span>
+                              {o.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
+                              {stage !== 'new' ? <Pill>{stage}</Pill> : null}
+                            </div>
+                            <div className="mt-1 text-sm text-zinc-100">{shortText(o.text, 120)}</div>
+                            <div className="mt-1 text-xs text-zinc-500">{o.why}</div>
+                          </div>
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="text-sm text-zinc-400">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950 text-[11px] font-semibold text-zinc-200">
+                            {idx + 1}
+                          </span>
+                          <span>Empty</span>
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">Pick from Backlog below.</div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {primary ? (
+                        <SmallButton
+                          onClick={() => {
+                            if (!o) return
+                            setSelectedKey(o.dedupeKey)
+                            void primary.run()
+                          }}
+                          tone="primary"
+                        >
+                          {primary.label}
+                        </SmallButton>
+                      ) : null}
+                      {o ? (
+                        <>
+                          <SmallButton
+                            onClick={() => togglePinSlot(idx)}
+                          >
+                            {slot?.pinned ? 'Unpin' : 'Pin'}
+                          </SmallButton>
+                          <SmallButton onClick={() => swapSlot(idx)}>Swap</SmallButton>
+                          <SmallButton onClick={() => openDetail(o.dedupeKey)}>Details</SmallButton>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+              <div className="text-xs font-semibold text-zinc-300">Backlog</div>
               <div className="text-xs text-zinc-500">{opportunities.length} items</div>
             </div>
             {opportunities.length === 0 ? (
@@ -595,22 +781,21 @@ export default function CockpitPage() {
                   const active = selected?.dedupeKey === o.dedupeKey
                   const stage = stageFor(o.dedupeKey, o.state)
                   return (
-                    <button
+                    <div
                       key={o.dedupeKey}
                       className={[
-                        'w-full border-b border-zinc-900 px-3 py-2 text-left transition',
-                        active ? 'bg-zinc-900/40' : 'hover:bg-zinc-900/30',
-                        focusRing
+                        'flex items-stretch justify-between gap-2 border-b border-zinc-900 px-3 py-2',
+                        active ? 'bg-zinc-900/40' : ''
                       ].join(' ')}
-                      onClick={() => openDetail(o.dedupeKey)}
-                      type="button"
                     >
-                      <div className="flex items-center justify-between gap-2">
+                      <button
+                        className={['min-w-0 flex-1 text-left transition hover:bg-zinc-900/0', focusRing].join(' ')}
+                        onClick={() => openDetail(o.dedupeKey)}
+                        type="button"
+                      >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                            <span className="font-medium text-zinc-200">
-                              @{o.actorHandle ?? 'unknown'}
-                            </span>
+                            <span className="font-medium text-zinc-200">@{o.actorHandle ?? 'unknown'}</span>
                             <span>·</span>
                             <span>{fmtTime(o.occurredAt)}</span>
                             {showDebug ? <Pill>score {o.score}</Pill> : null}
@@ -620,9 +805,21 @@ export default function CockpitPage() {
                           </div>
                           <div className="mt-1 text-sm text-zinc-100">{shortText(o.text, 160)}</div>
                         </div>
-                        <div className="shrink-0 text-[11px] text-zinc-500">›</div>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          className={[
+                            'rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-900',
+                            focusRing
+                          ].join(' ')}
+                          onClick={() => addToPlan(o.dedupeKey)}
+                          type="button"
+                        >
+                          Add
+                        </button>
+                        <div className="text-[11px] text-zinc-500">›</div>
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
