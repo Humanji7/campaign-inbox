@@ -56,7 +56,7 @@ function groupLatestByActor(events: UnifiedEvent[]): UnifiedEvent[] {
 }
 
 const focusRing =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-0'
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-0'
 
 function getLocalStorageItem(key: string): string | null {
   try {
@@ -80,6 +80,13 @@ const LS_QUEUE_ONLY = 'cockpit.x.queueOnly.v1'
 const LS_INCLUDE_MENTIONS = 'cockpit.x.includeMentions.v1'
 const LS_AGE_HOURS = 'cockpit.x.ageHours.v1'
 const LS_DO_NOW = 'cockpit.x.doNow.v1'
+const LS_PALETTE = 'cockpit.x.palette.v1'
+
+function readPalette(): 'default' | 'warm' {
+  const raw = getLocalStorageItem(LS_PALETTE)
+  if (raw === 'default' || raw === 'warm') return raw
+  return 'warm'
+}
 
 function readAgeHours(): 6 | 24 | 72 {
   const raw = getLocalStorageItem(LS_AGE_HOURS)
@@ -101,7 +108,7 @@ function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neu
       ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200'
       : tone === 'warn'
         ? 'border-amber-800 bg-amber-950/30 text-amber-200'
-        : 'border-zinc-800 bg-zinc-950 text-zinc-300'
+        : 'border-[color:var(--border)] bg-[color:var(--surface2)] text-[color:var(--muted)]'
   return <span className={['rounded-md border px-1.5 py-0.5 text-[10px]', cls].join(' ')}>{children}</span>
 }
 
@@ -110,15 +117,15 @@ function SmallButton({
   onClick,
   tone = 'neutral'
 }: {
-  children: string
+  children: ReactNode
   onClick?: () => void
   tone?: 'neutral' | 'primary'
 }) {
   const base = 'rounded-lg border px-2 py-1 text-xs font-medium shadow-sm transition'
   const cls =
     tone === 'primary'
-      ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-100 hover:bg-indigo-500/20'
-      : 'border-zinc-800 bg-zinc-950/60 text-zinc-200 hover:bg-zinc-900/60'
+      ? 'border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] text-[color:var(--accent-text)] hover:bg-[color:var(--accent-bg-hover)]'
+      : 'border-[color:var(--border)] bg-[color:var(--surface)] text-zinc-200 hover:bg-[color:var(--surface2)]'
   return (
     <button className={[base, cls, focusRing].join(' ')} onClick={onClick} type="button">
       {children}
@@ -129,7 +136,10 @@ function SmallButton({
 function LinkButton({ href, children }: { href: string; children: string }) {
   return (
     <a
-      className={['rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-900', focusRing].join(' ')}
+      className={[
+        'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200 hover:bg-[color:var(--surface2)]',
+        focusRing
+      ].join(' ')}
       href={href}
       target="_blank"
       rel="noreferrer"
@@ -142,6 +152,7 @@ function LinkButton({ href, children }: { href: string; children: string }) {
 export default function CockpitPage() {
   const sb = supabase
   const [showDebug, setShowDebug] = useState(false)
+  const [palette, setPalette] = useState<'default' | 'warm'>(() => readPalette())
   const [includeMentions, setIncludeMentions] = useState(() => readBool(LS_INCLUDE_MENTIONS, true))
   const [queueOnly, setQueueOnly] = useState(() => readBool(LS_QUEUE_ONLY, true))
   const [ageHours, setAgeHours] = useState<6 | 24 | 72>(() => readAgeHours())
@@ -157,6 +168,12 @@ export default function CockpitPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
+
+  useEffect(() => {
+    if (palette === 'warm') document.documentElement.dataset.theme = 'warm'
+    else delete (document.documentElement as any).dataset.theme
+    setLocalStorageItem(LS_PALETTE, palette)
+  }, [palette])
 
   useEffect(() => {
     setLocalStorageItem(LS_INCLUDE_MENTIONS, includeMentions ? '1' : '0')
@@ -197,7 +214,7 @@ export default function CockpitPage() {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Cockpit</h1>
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-300">
+        <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-zinc-300">
           Missing Supabase env. Copy `.env.example` → `.env` and set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
         </div>
       </div>
@@ -558,11 +575,16 @@ export default function CockpitPage() {
             Refresh
           </SmallButton>
           <SmallButton onClick={() => setShowDebug(v => !v)}>{showDebug ? 'Hide Debug' : 'Debug'}</SmallButton>
+          {showDebug ? (
+            <SmallButton onClick={() => setPalette(p => (p === 'warm' ? 'default' : 'warm'))}>
+              Palette: {palette === 'warm' ? 'Warm' : 'Default'}
+            </SmallButton>
+          ) : null}
         </div>
       </div>
 
       {!signedIn ? (
-        <div className="rounded-2xl border border-amber-900/60 bg-zinc-950 p-4 text-sm text-amber-200">
+        <div className="rounded-2xl border border-amber-900/60 bg-[color:var(--surface)] p-4 text-sm text-amber-200">
           Signed out. Cockpit data is per-user (RLS). Connect GitHub to load your X queue.
           <div className="mt-3">
             <button
@@ -583,16 +605,18 @@ export default function CockpitPage() {
       )}
 
       {isLoading ? (
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">Loading…</div>
+        <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--muted)]">
+          Loading…
+        </div>
       ) : error ? (
-        <div className="rounded-2xl border border-red-900/60 bg-zinc-950 p-4 text-sm text-red-200">
+        <div className="rounded-2xl border border-red-900/60 bg-[color:var(--surface)] p-4 text-sm text-red-200">
           Failed: {String((error as any)?.message ?? error)}
         </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-[440px_1fr]">
         <div className="space-y-4">
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-5 backdrop-blur">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold">Weekly Target</div>
@@ -605,7 +629,7 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-4 backdrop-blur">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-medium text-zinc-300">Filters</div>
               <div className="flex items-center gap-2">
@@ -629,9 +653,10 @@ export default function CockpitPage() {
                 </label>
                 <select
                   aria-label="Age window"
-                  className={['rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-xs text-zinc-200', focusRing].join(
-                    ' '
-                  )}
+                  className={[
+                    'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200',
+                    focusRing
+                  ].join(' ')}
                   onChange={e => setAgeHours(Number(e.target.value) as any)}
                   value={ageHours}
                 >
@@ -647,12 +672,12 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-3">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] backdrop-blur">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
               <div className="text-xs font-semibold text-zinc-300">Do Now</div>
               <div className="text-xs text-zinc-500">Top 3</div>
             </div>
-            <div className="divide-y divide-zinc-900/70">
+            <div className="divide-y divide-zinc-900/60">
               {doNowPlan.items.map((o, idx) => {
                 const slot = doNowPlan.slots[idx]
                 const active = selected?.dedupeKey === o?.dedupeKey
@@ -674,8 +699,8 @@ export default function CockpitPage() {
                     key={idx}
                     className={[
                       'px-4 py-4',
-                      active ? 'bg-indigo-500/5' : '',
-                      slot?.pinned ? 'bg-zinc-950/30' : ''
+                      active ? 'bg-[color:var(--accent-bg)]' : '',
+                      slot?.pinned ? 'bg-[color:var(--surface2)]' : ''
                     ].join(' ')}
                   >
                     {o ? (
@@ -687,7 +712,7 @@ export default function CockpitPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 text-xs text-zinc-400">
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950 text-[11px] font-semibold text-zinc-200">
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface2)] text-[11px] font-semibold text-zinc-200">
                                 {idx + 1}
                               </span>
                               <span className="font-medium text-zinc-200">@{o.actorHandle ?? 'unknown'}</span>
@@ -705,7 +730,7 @@ export default function CockpitPage() {
                     ) : (
                       <div className="text-sm text-zinc-400">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950 text-[11px] font-semibold text-zinc-200">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface2)] text-[11px] font-semibold text-zinc-200">
                             {idx + 1}
                           </span>
                           <span>Empty</span>
@@ -745,8 +770,8 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-3">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] backdrop-blur">
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
               <div className="text-xs font-semibold text-zinc-300">Backlog</div>
               <div className="text-xs tabular-nums text-zinc-500">{opportunities.length} items</div>
             </div>
@@ -759,7 +784,7 @@ export default function CockpitPage() {
                       {h.action ? (
                         <button
                           className={[
-                            'shrink-0 rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-900',
+                            'shrink-0 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200 hover:bg-[color:var(--surface2)]',
                             focusRing
                           ].join(' ')}
                           onClick={h.action.run}
@@ -811,7 +836,7 @@ export default function CockpitPage() {
                       <div className="flex shrink-0 items-center gap-2">
                         <button
                           className={[
-                            'rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-900',
+                            'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-zinc-200 hover:bg-[color:var(--surface2)]',
                             focusRing
                           ].join(' ')}
                           onClick={() => addToPlan(o.dedupeKey)}
@@ -829,7 +854,7 @@ export default function CockpitPage() {
           </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-5 backdrop-blur">
+      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5 backdrop-blur">
         {!selected ? (
           <div className="text-sm text-zinc-400">Pick an item to see details.</div>
         ) : (
@@ -851,7 +876,7 @@ export default function CockpitPage() {
 
       {showDebug ? (
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold">Latest feed (raw)</div>
               <div className="text-xs text-zinc-500">debug</div>
@@ -861,7 +886,7 @@ export default function CockpitPage() {
             ) : (
               <div className="space-y-2">
                 {latestByActor.slice(0, 10).map(e => (
-                  <div key={e.id} className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3">
+                  <div key={e.id} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-xs text-zinc-400">
@@ -877,7 +902,7 @@ export default function CockpitPage() {
             )}
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold">Mentions (raw)</div>
               <div className="text-xs text-zinc-500">debug</div>
@@ -887,7 +912,7 @@ export default function CockpitPage() {
             ) : (
               <div className="space-y-2">
                 {mentions.map(e => (
-                  <div key={e.id} className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3">
+                  <div key={e.id} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-xs text-zinc-400">
@@ -905,19 +930,19 @@ export default function CockpitPage() {
         </div>
       ) : null}
 
-	      {mobileDetailOpen && selected ? (
-	        <div className="fixed inset-0 z-50 md:hidden">
-	          <button
-	            aria-label="Close details"
-	            className={['absolute inset-0 bg-black/60', focusRing].join(' ')}
-	            onClick={() => setMobileDetailOpen(false)}
-	            type="button"
-	          />
-	          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-zinc-800 bg-zinc-950 p-4">
-	            <OpportunityDetail
-	              opportunity={selected}
-	              workItem={selectedWork}
-	              showDebug={showDebug}
+      {mobileDetailOpen && selected ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            aria-label="Close details"
+            className={['absolute inset-0 bg-black/60', focusRing].join(' ')}
+            onClick={() => setMobileDetailOpen(false)}
+            type="button"
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+            <OpportunityDetail
+              opportunity={selected}
+              workItem={selectedWork}
+              showDebug={showDebug}
 	              onCopyDraft={copyDraft}
 	              onOpen={openLink}
 	              onSaveDraft={signedIn ? saveDraft : async () => {}}
@@ -987,13 +1012,13 @@ function OpportunityDetail({
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3">
         <div className="text-[11px] font-medium text-zinc-400">Context</div>
         <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-100">{shortText(opportunity.text, 800)}</div>
         <div className="mt-2 text-xs text-zinc-500">{opportunity.why}</div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] font-medium text-zinc-400">Draft</div>
           <div className="flex items-center gap-2 text-[11px] text-zinc-500">
@@ -1003,7 +1028,7 @@ function OpportunityDetail({
         <textarea
           aria-label="Reply draft"
           className={[
-            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
+            'mt-2 min-h-[120px] w-full resize-y rounded-lg border border-[color:var(--border)] bg-[color:var(--surface2)] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600',
             focusRing
           ].join(' ')}
           placeholder="Write a quick reply draft here (or paste from your bot)."
@@ -1034,7 +1059,7 @@ function OpportunityDetail({
             'rounded-lg border px-2 py-1 text-xs transition',
             opportunity.gotReply
               ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/60'
-              : 'border-zinc-800 bg-zinc-950 text-zinc-300 hover:bg-zinc-900',
+              : 'border-[color:var(--border)] bg-[color:var(--surface)] text-[color:var(--muted)] hover:bg-[color:var(--surface2)]',
             focusRing
           ].join(' ')}
           onClick={onToggleGotReply}
