@@ -114,11 +114,11 @@ function SmallButton({
   onClick?: () => void
   tone?: 'neutral' | 'primary'
 }) {
-  const base = 'rounded-lg border px-2 py-1 text-xs transition'
+  const base = 'rounded-lg border px-2 py-1 text-xs font-medium shadow-sm transition'
   const cls =
     tone === 'primary'
-      ? 'border-zinc-700 bg-zinc-900 text-zinc-100 hover:bg-zinc-800'
-      : 'border-zinc-800 bg-zinc-950 text-zinc-200 hover:bg-zinc-900'
+      ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-100 hover:bg-indigo-500/20'
+      : 'border-zinc-800 bg-zinc-950/60 text-zinc-200 hover:bg-zinc-900/60'
   return (
     <button className={[base, cls, focusRing].join(' ')} onClick={onClick} type="button">
       {children}
@@ -545,14 +545,14 @@ export default function CockpitPage() {
   }, [applyState, sb, selected])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3">
-	        <div className="min-w-0">
-	          <h1 className="text-2xl font-semibold">Brand Ops Cockpit · X</h1>
-	          <div className="text-xs text-zinc-400">
-	            {lastSync ? `Fresh as of ${fmtTime(lastSync)} · Active hours 08:00–22:00 ET` : 'No events yet'}
-	          </div>
-	        </div>
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">Brand Ops Cockpit · X</h1>
+          <div className="text-xs text-zinc-400">
+            {lastSync ? `Fresh as of ${fmtTime(lastSync)} · Active hours 08:00–22:00 ET` : 'No events yet'}
+          </div>
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           <SmallButton onClick={() => void mutate()} tone="primary">
             Refresh
@@ -590,22 +590,22 @@ export default function CockpitPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-[420px_1fr]">
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+      <div className="grid gap-4 md:grid-cols-[440px_1fr]">
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-5 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold">Weekly Target</div>
                 <div className="text-xs text-zinc-400">P=2 replies from targets</div>
               </div>
               <div className="text-right">
-                <div className="text-lg font-semibold text-white">{Math.min(2, repliesThisWeek)}/2</div>
+                <div className="text-lg font-semibold tabular-nums text-white">{Math.min(2, repliesThisWeek)}/2</div>
                 <div className="text-xs text-zinc-500">Week Starts {fmtDate(weekStart)}</div>
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-4 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-medium text-zinc-300">Filters</div>
               <div className="flex items-center gap-2">
@@ -629,7 +629,7 @@ export default function CockpitPage() {
                 </label>
                 <select
                   aria-label="Age window"
-                  className={['rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200', focusRing].join(
+                  className={['rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-xs text-zinc-200', focusRing].join(
                     ' '
                   )}
                   onChange={e => setAgeHours(Number(e.target.value) as any)}
@@ -647,12 +647,12 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 backdrop-blur">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-3">
               <div className="text-xs font-semibold text-zinc-300">Do Now</div>
               <div className="text-xs text-zinc-500">Top 3</div>
             </div>
-            <div className="divide-y divide-zinc-900">
+            <div className="divide-y divide-zinc-900/70">
               {doNowPlan.items.map((o, idx) => {
                 const slot = doNowPlan.slots[idx]
                 const active = selected?.dedupeKey === o?.dedupeKey
@@ -673,8 +673,9 @@ export default function CockpitPage() {
                   <div
                     key={idx}
                     className={[
-                      'px-3 py-3',
-                      active ? 'bg-zinc-900/30' : ''
+                      'px-4 py-4',
+                      active ? 'bg-indigo-500/5' : '',
+                      slot?.pinned ? 'bg-zinc-950/30' : ''
                     ].join(' ')}
                   >
                     {o ? (
@@ -694,6 +695,7 @@ export default function CockpitPage() {
                               <span>{fmtTime(o.occurredAt)}</span>
                               {o.kind === 'mention' ? <Pill tone="warn">mention</Pill> : null}
                               {stage !== 'new' ? <Pill>{stage}</Pill> : null}
+                              {slot?.pinned ? <Pill>Pinned</Pill> : null}
                             </div>
                             <div className="mt-1 text-sm text-zinc-100">{shortText(o.text, 120)}</div>
                             <div className="mt-1 text-xs text-zinc-500">{o.why}</div>
@@ -743,13 +745,13 @@ export default function CockpitPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 backdrop-blur">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-3">
               <div className="text-xs font-semibold text-zinc-300">Backlog</div>
-              <div className="text-xs text-zinc-500">{opportunities.length} items</div>
+              <div className="text-xs tabular-nums text-zinc-500">{opportunities.length} items</div>
             </div>
             {opportunities.length === 0 ? (
-              <div className="p-3 text-sm text-zinc-400">
+              <div className="p-4 text-sm text-zinc-400">
                 <div className="space-y-2">
                   {emptyHints.map((h, idx) => (
                     <div key={idx} className="flex items-center justify-between gap-3">
@@ -776,7 +778,7 @@ export default function CockpitPage() {
                 </div>
               </div>
             ) : (
-              <div className="max-h-[60vh] overflow-auto overscroll-contain">
+              <div className="max-h-[52vh] overflow-auto overscroll-contain">
                 {opportunities.map(o => {
                   const active = selected?.dedupeKey === o.dedupeKey
                   const stage = stageFor(o.dedupeKey, o.state)
@@ -825,13 +827,13 @@ export default function CockpitPage() {
               </div>
             )}
           </div>
-        </div>
+      </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-          {!selected ? (
-            <div className="text-sm text-zinc-400">Pick an item to see details.</div>
-          ) : (
-            <OpportunityDetail
+      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-5 backdrop-blur">
+        {!selected ? (
+          <div className="text-sm text-zinc-400">Pick an item to see details.</div>
+        ) : (
+          <OpportunityDetail
               opportunity={selected}
               workItem={selectedWork}
               showDebug={showDebug}
