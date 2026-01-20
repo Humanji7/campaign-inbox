@@ -157,6 +157,43 @@ function LinkButton({ href, children }: { href: string; children: string }) {
   )
 }
 
+function StepPill({ active, children }: { active: boolean; children: string }) {
+  const base = 'rounded-md border px-1.5 py-0.5 text-[10px] font-medium'
+  const cls = active
+    ? 'border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] text-[color:var(--accent-text)]'
+    : 'border-[color:var(--border)] bg-[color:var(--surface2)] text-[color:var(--muted)]'
+  return <span className={[base, cls].join(' ')}>{children}</span>
+}
+
+function NextSteps({ step }: { step: 'open' | 'draft' | 'reply' | 'done' }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+      <StepPill active={step === 'open'}>Open</StepPill>
+      <span className="text-[color:var(--muted)]">→</span>
+      <StepPill active={step === 'draft'}>Draft</StepPill>
+      <span className="text-[color:var(--muted)]">→</span>
+      <StepPill active={step === 'reply'}>Reply</StepPill>
+      <span className="text-[color:var(--muted)]">→</span>
+      <StepPill active={step === 'done'}>Done</StepPill>
+    </div>
+  )
+}
+
+function MenuButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      className={[
+        'w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-200 hover:bg-[color:var(--surface2)]',
+        focusRing
+      ].join(' ')}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function CockpitPage() {
   const sb = supabase
   const [showDebug, setShowDebug] = useState(false)
@@ -177,6 +214,7 @@ export default function CockpitPage() {
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [draftFocusKey, setDraftFocusKey] = useState<string | null>(null)
+  const [slotMenuOpen, setSlotMenuOpen] = useState<number | null>(null)
 
   useEffect(() => {
     if (palette === 'warm') document.documentElement.dataset.theme = 'warm'
@@ -611,6 +649,23 @@ export default function CockpitPage() {
     })
   }, [])
 
+  useEffect(() => {
+    if (slotMenuOpen == null) return
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      const el = target.closest('[data-slot-menu-root]')
+      if (el) return
+      setSlotMenuOpen(null)
+    }
+    window.addEventListener('mousedown', handler)
+    window.addEventListener('touchstart', handler)
+    return () => {
+      window.removeEventListener('mousedown', handler)
+      window.removeEventListener('touchstart', handler)
+    }
+  }, [slotMenuOpen])
+
   const actionIgnore = useCallback(() => {
     if (!selected) return
     void Promise.all([
@@ -626,6 +681,14 @@ export default function CockpitPage() {
       upsertWorkItem(sb, { dedupeKey: selected.dedupeKey, stage: 'done' })
     ])
   }, [applyState, sb, selected])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSlotMenuOpen(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -769,9 +832,12 @@ export default function CockpitPage() {
                 const nextStep = (() => {
                   if (!o) return null
                   const hasDraft = Boolean(draft.trim())
+                  const isDone = stage === 'done' || stage === 'ignored'
+                  if (isDone) return { key: 'done' as const }
                   if (stage === 'ready' || hasDraft) {
                     if (o.url) {
                       return {
+                        key: 'reply' as const,
                         label: 'Reply Now',
                         hint: 'Copy & open thread',
                         run: async () => {
@@ -780,12 +846,18 @@ export default function CockpitPage() {
                         }
                       }
                     }
-                    return { label: 'Copy Reply', hint: 'Copy draft', run: async () => await copyDraftFor(o.dedupeKey, draft) }
+                    return {
+                      key: 'reply' as const,
+                      label: 'Copy Reply',
+                      hint: 'Copy draft',
+                      run: async () => await copyDraftFor(o.dedupeKey, draft)
+                    }
                   }
                   if (o.url) {
-                    return { label: 'Open Thread', hint: 'Read context on X', run: async () => openLinkFor(o) }
+                    return { key: 'open' as const, label: 'Open Thread', hint: 'Read context on X', run: async () => openLinkFor(o) }
                   }
                   return {
+                    key: 'draft' as const,
                     label: 'Write Draft',
                     hint: 'Start a reply',
                     run: () => {
@@ -825,6 +897,11 @@ export default function CockpitPage() {
                             </div>
                             <div className="mt-1 text-sm text-zinc-100">{shortText(o.text, 120)}</div>
                             <div className="mt-1 text-xs text-zinc-500">{o.why}</div>
+                            {nextStep && nextStep.key !== 'done' ? (
+                              <NextSteps step={nextStep.key === 'reply' ? 'reply' : nextStep.key === 'open' ? 'open' : 'draft'} />
+                            ) : nextStep?.key === 'done' ? (
+                              <NextSteps step="done" />
+                            ) : null}
                           </div>
                         </div>
                       </button>
@@ -837,11 +914,12 @@ export default function CockpitPage() {
                           <span>Empty</span>
                         </div>
                         <div className="mt-1 text-xs text-zinc-500">Pick from Backlog below.</div>
+                        <NextSteps step="open" />
                       </div>
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                      {nextStep ? (
+                      {nextStep && (nextStep as any).label ? (
                         <button
                           className={[
                             'flex-1 rounded-xl border border-[color:var(--accent-border)] bg-[color:var(--accent-bg)] px-4 py-3 text-left text-sm font-semibold text-[color:var(--accent-text)] shadow-sm transition hover:bg-[color:var(--accent-bg-hover)]',
@@ -850,25 +928,42 @@ export default function CockpitPage() {
                           onClick={() => {
                             if (!o) return
                             setSelectedKey(o.dedupeKey)
-                            void nextStep.run()
+                            void (nextStep as any).run()
                           }}
                           type="button"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <span>{nextStep.label}</span>
-                            <span className="text-xs font-medium text-[color:var(--muted)]">{nextStep.hint}</span>
+                            <span>{(nextStep as any).label}</span>
+                            <span className="text-xs font-medium text-[color:var(--muted)]">{(nextStep as any).hint}</span>
                           </div>
                         </button>
                       ) : null}
                       {o ? (
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                          <SmallButton onClick={() => togglePinSlot(idx)}>{slot?.pinned ? 'Unpin' : 'Pin'}</SmallButton>
-                          <SmallButton onClick={() => swapSlot(idx)}>Swap</SmallButton>
-                          <SmallButton onClick={() => openDetail(o.dedupeKey)}>Details</SmallButton>
-                          <SmallButton onClick={() => doneFor(o)} tone="primary">
-                            Done
-                          </SmallButton>
-                          <SmallButton onClick={() => ignoreFor(o)}>Ignore</SmallButton>
+                        <div className="relative flex shrink-0 items-center gap-2" data-slot-menu-root>
+                          <button
+                            aria-label={`More actions for slot ${idx + 1}`}
+                            className={[
+                              'rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-2 text-xs text-zinc-200 hover:bg-[color:var(--surface2)]',
+                              focusRing
+                            ].join(' ')}
+                            onClick={() => setSlotMenuOpen(v => (v === idx ? null : idx))}
+                            type="button"
+                          >
+                            ⋯
+                          </button>
+                          {slotMenuOpen === idx ? (
+                            <div
+                              className="absolute right-0 top-10 z-10 w-56 overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] shadow-lg"
+                              role="menu"
+                            >
+                              <MenuButton label={slot?.pinned ? 'Unpin' : 'Pin'} onClick={() => { togglePinSlot(idx); setSlotMenuOpen(null) }} />
+                              <MenuButton label="Swap" onClick={() => { swapSlot(idx); setSlotMenuOpen(null) }} />
+                              <MenuButton label="Details" onClick={() => { openDetail(o.dedupeKey); setSlotMenuOpen(null) }} />
+                              <div className="h-px bg-[color:var(--border)]" />
+                              <MenuButton label="Done" onClick={() => { doneFor(o); setSlotMenuOpen(null) }} />
+                              <MenuButton label="Ignore" onClick={() => { ignoreFor(o); setSlotMenuOpen(null) }} />
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
