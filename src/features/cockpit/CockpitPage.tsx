@@ -53,6 +53,42 @@ function groupLatestByActor(events: UnifiedEvent[]): UnifiedEvent[] {
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-0'
 
+function getLocalStorageItem(key: string): string | null {
+  try {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function setLocalStorageItem(key: string, value: string): void {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(key, value)
+  } catch {
+    // ignore
+  }
+}
+
+const LS_QUEUE_ONLY = 'cockpit.x.queueOnly.v1'
+const LS_INCLUDE_MENTIONS = 'cockpit.x.includeMentions.v1'
+const LS_AGE_HOURS = 'cockpit.x.ageHours.v1'
+
+function readAgeHours(): 6 | 24 | 72 {
+  const raw = getLocalStorageItem(LS_AGE_HOURS)
+  const n = Number(raw)
+  if (n === 6 || n === 24 || n === 72) return n
+  return 24
+}
+
+function readBool(key: string, fallback: boolean): boolean {
+  const raw = getLocalStorageItem(key)
+  if (raw === '1') return true
+  if (raw === '0') return false
+  return fallback
+}
+
 function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'good' | 'warn' }) {
   const cls =
     tone === 'good'
@@ -100,21 +136,40 @@ function LinkButton({ href, children }: { href: string; children: string }) {
 export default function CockpitPage() {
   const sb = supabase
   const [showDebug, setShowDebug] = useState(false)
-  const [includeMentions, setIncludeMentions] = useState(true)
-  const [queueOnly, setQueueOnly] = useState(true)
-  const [ageHours, setAgeHours] = useState<6 | 24 | 72>(24)
+  const [includeMentions, setIncludeMentions] = useState(() => readBool(LS_INCLUDE_MENTIONS, true))
+  const [queueOnly, setQueueOnly] = useState(() => readBool(LS_QUEUE_ONLY, true))
+  const [ageHours, setAgeHours] = useState<6 | 24 | 72>(() => readAgeHours())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+
+  useEffect(() => {
+    setLocalStorageItem(LS_INCLUDE_MENTIONS, includeMentions ? '1' : '0')
+  }, [includeMentions])
+
+  useEffect(() => {
+    setLocalStorageItem(LS_QUEUE_ONLY, queueOnly ? '1' : '0')
+  }, [queueOnly])
+
+  useEffect(() => {
+    setLocalStorageItem(LS_AGE_HOURS, String(ageHours))
+  }, [ageHours])
 
   const { data, error, isLoading, mutate } = useSWR(
-    sb ? 'cockpit-v1' : null,
+    sb ? 'cockpit-x-v2' : null,
     async () => {
+      const sessionInfo = await sb!.auth.getSession()
+      const user = sessionInfo.data.session?.user ?? null
+      if (!user) {
+        return { user: null, events: [], states: [], workItems: [] }
+      }
+
       const [events, states, workItems] = await Promise.all([
         listUnifiedEvents(sb!, { limit: 200, sources: ['x'] }),
         listOpportunityStates(sb!, { limit: 600 }),
         listWorkItems(sb!, { limit: 600 })
       ])
-      return { events, states, workItems }
+      return { user, events, states, workItems }
     },
     { revalidateOnFocus: false }
   )
@@ -133,7 +188,23 @@ export default function CockpitPage() {
   const events = data?.events ?? []
   const states = data?.states ?? []
   const workItems = data?.workItems ?? []
+  const authUser = data?.user ?? null
+  const signedIn = Boolean(authUser?.id)
+  const signedInLabel = authUser?.email ? authUser.email : signedIn ? 'Signed in' : 'Signed out'
   const lastSync = events[0]?.occurred_at ?? null
+
+  const connectGithub = useCallback(async () => {
+    if (!sb) return
+    setAuthBusy(true)
+    try {
+      await sb.auth.signInWithOAuth({
+        provider: 'github',
+        options: { redirectTo: window.location.origin }
+      })
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [sb])
 
   const workByKey = useMemo(() => {
     const map = new Map<string, WorkItem>()
@@ -337,6 +408,27 @@ export default function CockpitPage() {
         </div>
       </div>
 
+      {!signedIn ? (
+        <div className="rounded-2xl border border-amber-900/60 bg-zinc-950 p-4 text-sm text-amber-200">
+          Signed out. Cockpit data is per-user (RLS). Connect GitHub to load your X queue.
+          <div className="mt-3">
+            <button
+              className={[
+                'rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60',
+                focusRing
+              ].join(' ')}
+              onClick={() => void connectGithub()}
+              type="button"
+              disabled={authBusy}
+            >
+              {authBusy ? 'Connecting…' : 'Connect GitHub'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-xs text-zinc-500">Signed in as {signedInLabel}</div>
+      )}
+
       {isLoading ? (
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">Loading…</div>
       ) : error ? (
@@ -409,8 +501,13 @@ export default function CockpitPage() {
             </div>
             {opportunities.length === 0 ? (
               <div className="p-3 text-sm text-zinc-400">
-                No opportunities. Run:{' '}
-                <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code>
+                {!signedIn ? (
+                  'Sign in to load opportunities.'
+                ) : (
+                  <>
+                    No opportunities. Run: <code className="text-zinc-200">FORCE=1 npm run x:companion:once</code>
+                  </>
+                )}
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-auto overscroll-contain">
@@ -463,11 +560,11 @@ export default function CockpitPage() {
               showDebug={showDebug}
               onCopyDraft={copyDraft}
               onOpen={openLink}
-              onSaveDraft={saveDraft}
+              onSaveDraft={signedIn ? saveDraft : async () => {}}
               onCloseMobile={() => setMobileDetailOpen(false)}
-              onDone={actionDone}
-              onIgnore={actionIgnore}
-              onToggleGotReply={toggleGotReply}
+              onDone={signedIn ? actionDone : () => {}}
+              onIgnore={signedIn ? actionIgnore : () => {}}
+              onToggleGotReply={signedIn ? toggleGotReply : () => {}}
             />
           )}
         </div>
@@ -537,22 +634,22 @@ export default function CockpitPage() {
 	            onClick={() => setMobileDetailOpen(false)}
 	            type="button"
 	          />
-          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-zinc-800 bg-zinc-950 p-4">
-            <OpportunityDetail
-              opportunity={selected}
-              workItem={selectedWork}
-              showDebug={showDebug}
-              onCopyDraft={copyDraft}
-              onOpen={openLink}
-              onSaveDraft={saveDraft}
-              onCloseMobile={() => setMobileDetailOpen(false)}
-              onDone={actionDone}
-              onIgnore={actionIgnore}
-              onToggleGotReply={toggleGotReply}
-            />
-          </div>
-        </div>
-      ) : null}
+	          <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-auto overscroll-contain rounded-t-2xl border-t border-zinc-800 bg-zinc-950 p-4">
+	            <OpportunityDetail
+	              opportunity={selected}
+	              workItem={selectedWork}
+	              showDebug={showDebug}
+	              onCopyDraft={copyDraft}
+	              onOpen={openLink}
+	              onSaveDraft={signedIn ? saveDraft : async () => {}}
+	              onCloseMobile={() => setMobileDetailOpen(false)}
+	              onDone={signedIn ? actionDone : () => {}}
+	              onIgnore={signedIn ? actionIgnore : () => {}}
+	              onToggleGotReply={signedIn ? toggleGotReply : () => {}}
+	            />
+	          </div>
+	        </div>
+	      ) : null}
     </div>
   )
 }
