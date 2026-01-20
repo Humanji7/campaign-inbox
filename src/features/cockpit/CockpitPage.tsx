@@ -270,13 +270,14 @@ export default function CockpitPage() {
     setLocalStorageItem(LS_DO_NOW, JSON.stringify(doNowSlots))
   }, [doNowSlots])
 
-  const { data, error, isLoading, mutate } = useSWR(
+  const { data, error, isLoading, isValidating, mutate } = useSWR(
     sb ? 'cockpit-x-v2' : null,
     async () => {
+      const fetchedAt = new Date().toISOString()
       const sessionInfo = await sb!.auth.getSession()
       const user = sessionInfo.data.session?.user ?? null
       if (!user) {
-        return { user: null, events: [], states: [], workItems: [] }
+        return { user: null, events: [], states: [], workItems: [], fetchedAt }
       }
 
       const [events, states, workItems] = await Promise.all([
@@ -284,9 +285,9 @@ export default function CockpitPage() {
         listOpportunityStates(sb!, { limit: 600 }),
         listWorkItems(sb!, { limit: 600 })
       ])
-      return { user, events, states, workItems }
+      return { user, events, states, workItems, fetchedAt }
     },
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: true, refreshInterval: 60_000, refreshWhenHidden: false }
   )
 
   if (!sb) {
@@ -306,7 +307,8 @@ export default function CockpitPage() {
   const authUser = data?.user ?? null
   const signedIn = Boolean(authUser?.id)
   const signedInLabel = authUser?.email ? authUser.email : signedIn ? 'Signed in' : 'Signed out'
-  const lastSync = events[0]?.occurred_at ?? null
+  const fetchedAt = (data as any)?.fetchedAt ?? null
+  const latestEventAt = events[0]?.occurred_at ?? null
 
   const connectGithub = useCallback(async () => {
     if (!sb) return
@@ -765,12 +767,14 @@ export default function CockpitPage() {
               </Pill>
             </div>
             <div className="mt-0.5 text-[11px] text-[color:var(--muted)]">
-              {lastSync ? `Fresh as of ${fmtTime(lastSync)} · Active hours 08:00–22:00 ET` : 'No events yet'}
+              {fetchedAt ? `Last checked ${fmtTime(fetchedAt)}` : 'Not checked yet'}
+              {latestEventAt ? ` · Newest event ${fmtTime(latestEventAt)}` : ' · No events yet'}
+              {' · '}Active hours 08:00–22:00 ET
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <SmallButton onClick={() => void mutate()} tone="primary">
-              Refresh
+              {isValidating ? 'Refreshing…' : 'Refresh'}
             </SmallButton>
 
             <div className="relative" data-filters-root>
